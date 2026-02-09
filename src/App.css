@@ -206,6 +206,48 @@
   background: radial-gradient(circle at 30% 30%, #fcd34d, #f97316);
   box-shadow: 0 10px 18px rgba(15, 23, 42, 0.25);
   cursor: pointer;
+  animation-name: target-lifetime;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: forwards;
+}
+
+.target-pop {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  border: 2px solid rgba(59, 130, 246, 0.8);
+  box-shadow: 0 0 18px rgba(37, 99, 235, 0.35);
+  animation: target-pop 0.28s ease-out forwards;
+}
+
+@keyframes target-lifetime {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.85;
+  }
+  40% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.6);
+    opacity: 0.3;
+  }
+}
+
+@keyframes target-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(1.2);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
 }
 
 .game__footer {
@@ -287,7 +329,7 @@
 
 .scores__row {
   display: grid;
-  grid-template-columns: repeat(6, minmax(100px, 1fr));
+  grid-template-columns: repeat(5, minmax(100px, 1fr));
   gap: 0.75rem;
   padding: 0.6rem 0.8rem;
   border-radius: 12px;
@@ -323,8 +365,7 @@
 
   .scores__row span:nth-child(3),
   .scores__row span:nth-child(4),
-  .scores__row span:nth-child(5),
-  .scores__row span:nth-child(6) {
+  .scores__row span:nth-child(5) {
     display: none;
   }
 }

@@ -36,15 +36,19 @@ type Target = {
   expiresAt: number
 }
 
+type PopEffect = {
+  id: string
+  x: number
+  y: number
+  size: number
+}
+
 type ScoreEntry = {
   name: string
   score: number
   accuracy: number
   cps: number
   date: string
-  duration: DurationOption
-  targetSizeId: string
-  difficultyId: string
 }
 
 
@@ -70,7 +74,7 @@ const DIFFICULTY_PRESETS: DifficultyPreset[] = [
     description: 'Balanced spawn cadence and target life.',
     spawnRateMs: 650,
     maxTargets: 4,
-    lifetimeMs: 1400,
+    lifetimeMs: 1800,
   },
   {
     id: 'rapid',
@@ -98,58 +102,21 @@ const getDefaultSettings = (): Settings => ({
   difficultyId: 'focused',
 })
 
-const parseScoreKey = (key: string): Settings | null => {
-  const [durationRaw, targetSizeId, difficultyId] = key.split('|')
-  if (!durationRaw || !targetSizeId || !difficultyId) return null
-  const durationValue = Number(durationRaw.replace('s', ''))
-  if (!DURATION_OPTIONS.includes(durationValue as DurationOption)) return null
-  return {
-    duration: durationValue as DurationOption,
-    targetSizeId,
-    difficultyId,
-  }
-}
+const buildScoreKey = (settings: Settings) =>
+  `${settings.duration}s|${settings.targetSizeId}|${settings.difficultyId}`
 
-const normalizeEntry = (
-  entry: ScoreEntry | Omit<ScoreEntry, 'duration' | 'targetSizeId' | 'difficultyId'>,
-  fallback: Settings
-): ScoreEntry => ({
-  ...entry,
-  duration: 'duration' in entry ? entry.duration : fallback.duration,
-  targetSizeId: 'targetSizeId' in entry ? entry.targetSizeId : fallback.targetSizeId,
-  difficultyId: 'difficultyId' in entry ? entry.difficultyId : fallback.difficultyId,
-})
-
-const sortScores = (entries: ScoreEntry[]) =>
-  [...entries].sort((a, b) => b.score - a.score).slice(0, 10)
-
-const readScores = (): ScoreEntry[] => {
-  if (typeof window === 'undefined') return []
+const readScores = (): Record<string, ScoreEntry[]> => {
+  if (typeof window === 'undefined') return {}
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) {
-      return sortScores(
-        parsed.map((entry) => normalizeEntry(entry, getDefaultSettings()))
-      )
-    }
-    if (parsed && typeof parsed === 'object') {
-      const entries = Object.entries(parsed as Record<string, ScoreEntry[]>).flatMap(
-        ([key, value]) => {
-          const fallback = parseScoreKey(key) ?? getDefaultSettings()
-          return value.map((entry) => normalizeEntry(entry, fallback))
-        }
-      )
-      return sortScores(entries)
-    }
-    return []
+    if (!raw) return {}
+    return JSON.parse(raw) as Record<string, ScoreEntry[]>
   } catch {
-    return []
+    return {}
   }
 }
 
-const writeScores = (scores: ScoreEntry[]) => {
+const writeScores = (scores: Record<string, ScoreEntry[]>) => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(scores))
 }
 
@@ -167,13 +134,15 @@ function App() {
   const [totalClicks, setTotalClicks] = useState(0)
   const [reactionTimes, setReactionTimes] = useState<number[]>([])
   const [pendingName, setPendingName] = useState('')
-  const [scores, setScores] = useState<ScoreEntry[]>([])
+  const [scores, setScores] = useState<Record<string, ScoreEntry[]>>({})
   const [qualifiedForScore, setQualifiedForScore] = useState(false)
+  const [popEffects, setPopEffects] = useState<PopEffect[]>([])
 
   const boardRef = useRef<HTMLDivElement | null>(null)
   const spawnTimeout = useRef<number | null>(null)
   const lifetimeInterval = useRef<number | null>(null)
   const timerInterval = useRef<number | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
 
   const targetSize = useMemo(
     () => TARGET_SIZE_PRESETS.find((preset) => preset.id === settings.targetSizeId),
@@ -219,18 +188,18 @@ function App() {
     ? reactionTimes.reduce((sum, value) => sum + value, 0) / reactionTimes.length
     : 0
 
-  const activeScores = useMemo(() => sortScores(scores), [scores])
+  const activeScoreKey = buildScoreKey(settings)
+  const activeScores = scores[activeScoreKey] ?? []
 
-  const updateScores = (nextScores: ScoreEntry[]) => {
-    const sorted = sortScores(nextScores)
-    setScores(sorted)
-    writeScores(sorted)
+  const updateScores = (nextScores: Record<string, ScoreEntry[]>) => {
+    setScores(nextScores)
+    writeScores(nextScores)
   }
 
   const checkQualification = (nextScore: number) => {
-    if (activeScores.length < 10) return true
-    const threshold = activeScores[activeScores.length - 1]
-    return nextScore > threshold.score
+    const currentScores = scores[activeScoreKey] ?? []
+    if (currentScores.length < 10) return true
+    return currentScores.some((entry) => nextScore > entry.score)
   }
 
   const handleStartGame = () => {
@@ -326,10 +295,49 @@ function App() {
   }
 
   const handleTargetClick = (targetId: string, createdAt: number) => {
+    const hitTarget = targets.find((target) => target.id === targetId)
     setTargets((current) => current.filter((target) => target.id !== targetId))
     setHits((prev) => prev + 1)
     setTotalClicks((prev) => prev + 1)
     setReactionTimes((prev) => [...prev, Date.now() - createdAt])
+    if (hitTarget && targetSize) {
+      triggerPopEffect(hitTarget.x, hitTarget.y, targetSize.size)
+    }
+    playPopSound()
+  }
+
+  const triggerPopEffect = (x: number, y: number, size: number) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const effect: PopEffect = { id, x, y, size }
+    setPopEffects((current) => [...current, effect])
+    window.setTimeout(() => {
+      setPopEffects((current) => current.filter((item) => item.id !== id))
+    }, 280)
+  }
+
+  const playPopSound = () => {
+    if (typeof window === 'undefined') return
+    const AudioContextClass = window.AudioContext || (window as typeof window & {
+      webkitAudioContext?: typeof AudioContext
+    }).webkitAudioContext
+    if (!AudioContextClass) return
+    const audioContext =
+      audioContextRef.current ?? (audioContextRef.current = new AudioContextClass())
+    if (audioContext.state === 'suspended') {
+      audioContext.resume().catch(() => undefined)
+    }
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    oscillator.type = 'triangle'
+    oscillator.frequency.value = 520
+    gainNode.gain.value = 0.0001
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    const now = audioContext.currentTime
+    gainNode.gain.exponentialRampToValueAtTime(0.12, now + 0.015)
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.18)
+    oscillator.start(now)
+    oscillator.stop(now + 0.2)
   }
 
   const handleSubmitScore = (event: FormEvent) => {
@@ -342,17 +350,15 @@ function App() {
       accuracy,
       cps: clicksPerSecond,
       date: new Date().toISOString(),
-      duration: settings.duration,
-      targetSizeId: settings.targetSizeId,
-      difficultyId: settings.difficultyId,
     }
-    updateScores([...scores, entry])
+    const updated = { ...scores }
+    const list = [...(updated[activeScoreKey] ?? []), entry]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+    updated[activeScoreKey] = list
+    updateScores(updated)
     setQualifiedForScore(false)
     setPendingName('')
-  }
-
-  const handleClearScores = () => {
-    updateScores([])
   }
 
   const selectedDurationLabel = `${settings.duration}s`
@@ -365,16 +371,6 @@ function App() {
       day: 'numeric',
       year: 'numeric',
     })
-
-  const formatScoreSettings = (entry: ScoreEntry) => {
-    const targetLabel =
-      TARGET_SIZE_PRESETS.find((preset) => preset.id === entry.targetSizeId)?.label ??
-      entry.targetSizeId
-    const difficultyLabel =
-      DIFFICULTY_PRESETS.find((preset) => preset.id === entry.difficultyId)?.label ??
-      entry.difficultyId
-    return `${entry.duration}s · ${targetLabel} · ${difficultyLabel}`
-  }
 
   return (
     <div className="app">
@@ -514,12 +510,26 @@ function App() {
                   height: targetSize?.size,
                   left: target.x,
                   top: target.y,
+                  animationDuration: `${difficulty?.lifetimeMs ?? 1000}ms`,
                 }}
                 onClick={(event) => {
                   event.stopPropagation()
                   handleTargetClick(target.id, target.createdAt)
                 }}
                 aria-label="Hit target"
+              />
+            ))}
+            {popEffects.map((effect) => (
+              <span
+                key={effect.id}
+                className="target-pop"
+                style={{
+                  width: effect.size,
+                  height: effect.size,
+                  left: effect.x,
+                  top: effect.y,
+                }}
+                aria-hidden="true"
               />
             ))}
           </div>
@@ -582,7 +592,7 @@ function App() {
               <form className="score-form" onSubmit={handleSubmitScore}>
                 <div>
                   <h3>New high score!</h3>
-                  <p>Enter your name to save it to the global leaderboard.</p>
+                  <p>Enter your name to save it to this setting combo.</p>
                 </div>
                 <div className="score-form__fields">
                   <input
@@ -619,13 +629,15 @@ function App() {
             <div className="scores">
               <div className="scores__header">
                 <h2>High scores</h2>
-                <p>Global top 10 across all sessions and settings.</p>
+                <p>
+                  Showing top 10 for {selectedDurationLabel} · {selectedTargetLabel} ·{' '}
+                  {selectedDifficultyLabel}
+                </p>
               </div>
               <div className="scores__table">
                 <div className="scores__row scores__row--head">
                   <span>Name</span>
                   <span>Score</span>
-                  <span>Mode</span>
                   <span>Accuracy</span>
                   <span>Clicks/sec</span>
                   <span>Date</span>
@@ -639,7 +651,6 @@ function App() {
                   <div key={`${entry.name}-${entry.date}-${index}`} className="scores__row">
                     <span>{entry.name}</span>
                     <span>{entry.score}</span>
-                    <span>{formatScoreSettings(entry)}</span>
                     <span>{formatPercent(entry.accuracy)}</span>
                     <span>{formatNumber(entry.cps)}</span>
                     <span>{formatDate(entry.date)}</span>
@@ -647,9 +658,6 @@ function App() {
                 ))}
               </div>
               <div className="scores__footer">
-                <button type="button" className="ghost-button" onClick={handleClearScores}>
-                  Clear scores
-                </button>
                 <button type="button" className="primary-button" onClick={() => setScreen('start')}>
                   Back to settings
                 </button>
