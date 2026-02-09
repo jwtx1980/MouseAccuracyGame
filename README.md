@@ -71,3 +71,24 @@ export default defineConfig([
   },
 ])
 ```
+
+## Mouse Accuracy Game
+
+### Scoring
+- Hits are worth **+10** points.
+- Misses (clicking the board or letting a target expire) cost **-2** points.
+- Scores never go below **0**.
+
+### Controls
+- Select duration, target size, and difficulty on the Start screen.
+- Click targets as they appear in the game area.
+- Click empty space to record a miss.
+- End a round early with the **End round** button.
+
+## Deployment (GitHub Pages)
+
+- Local dev: `npm install` then `npm run dev`.
+- Build: `npm run build`.
+- Pages URL: `https://jwtx1980.github.io/MouseAccuracyGame/`.
+- If the deployed page is blank, confirm Vite's base path is set to `/MouseAccuracyGame/`.
+- In GitHub repo settings, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
