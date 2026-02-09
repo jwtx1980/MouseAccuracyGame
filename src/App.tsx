@@ -188,13 +188,14 @@ function App() {
     let isActive = true
     setIsScoresLoading(true)
     setScoresError(null)
-    supabase
-      .from('leaderboard')
-      .select('name, score, accuracy, cps, created_at')
-      .eq('settings_key', activeScoreKey)
-      .order('score', { ascending: false })
-      .limit(10)
-      .then(({ data, error }) => {
+    const loadScores = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('leaderboard')
+          .select('name, score, accuracy, cps, created_at')
+          .eq('settings_key', activeScoreKey)
+          .order('score', { ascending: false })
+          .limit(10)
         if (!isActive) return
         if (error) {
           setScoresError('Unable to load leaderboard right now.')
@@ -209,15 +210,16 @@ function App() {
             date: row.created_at,
           })) ?? []
         setScores((current) => ({ ...current, [activeScoreKey]: entries }))
-      })
-      .catch(() => {
+      } catch {
         if (!isActive) return
         setScoresError('Unable to load leaderboard right now.')
-      })
-      .finally(() => {
+      } finally {
         if (!isActive) return
         setIsScoresLoading(false)
-      })
+      }
+    }
+
+    void loadScores()
 
     return () => {
       isActive = false
@@ -377,16 +379,15 @@ function App() {
       cps: clicksPerSecond,
       date: new Date().toISOString(),
     }
-    supabase
-      .from('leaderboard')
-      .insert({
-        settings_key: activeScoreKey,
-        name: entry.name,
-        score: entry.score,
-        accuracy: entry.accuracy,
-        cps: entry.cps,
-      })
-      .then(({ error }) => {
+    const saveScore = async () => {
+      try {
+        const { error } = await supabase.from('leaderboard').insert({
+          settings_key: activeScoreKey,
+          name: entry.name,
+          score: entry.score,
+          accuracy: entry.accuracy,
+          cps: entry.cps,
+        })
         if (error) {
           setScoresError('Unable to save your score right now.')
           return
@@ -399,10 +400,12 @@ function App() {
         }))
         setQualifiedForScore(false)
         setPendingName('')
-      })
-      .catch(() => {
+      } catch {
         setScoresError('Unable to save your score right now.')
-      })
+      }
+    }
+
+    void saveScore()
   }
 
   const selectedDurationLabel = `${settings.duration}s`
