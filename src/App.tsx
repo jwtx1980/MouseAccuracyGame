@@ -36,13 +36,6 @@ type Target = {
   expiresAt: number
 }
 
-type PopEffect = {
-  id: string
-  x: number
-  y: number
-  size: number
-}
-
 type ScoreEntry = {
   name: string
   score: number
@@ -74,7 +67,7 @@ const DIFFICULTY_PRESETS: DifficultyPreset[] = [
     description: 'Balanced spawn cadence and target life.',
     spawnRateMs: 650,
     maxTargets: 4,
-    lifetimeMs: 1800,
+    lifetimeMs: 1400,
   },
   {
     id: 'rapid',
@@ -136,13 +129,11 @@ function App() {
   const [pendingName, setPendingName] = useState('')
   const [scores, setScores] = useState<Record<string, ScoreEntry[]>>({})
   const [qualifiedForScore, setQualifiedForScore] = useState(false)
-  const [popEffects, setPopEffects] = useState<PopEffect[]>([])
 
   const boardRef = useRef<HTMLDivElement | null>(null)
   const spawnTimeout = useRef<number | null>(null)
   const lifetimeInterval = useRef<number | null>(null)
   const timerInterval = useRef<number | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
 
   const targetSize = useMemo(
     () => TARGET_SIZE_PRESETS.find((preset) => preset.id === settings.targetSizeId),
@@ -295,49 +286,10 @@ function App() {
   }
 
   const handleTargetClick = (targetId: string, createdAt: number) => {
-    const hitTarget = targets.find((target) => target.id === targetId)
     setTargets((current) => current.filter((target) => target.id !== targetId))
     setHits((prev) => prev + 1)
     setTotalClicks((prev) => prev + 1)
     setReactionTimes((prev) => [...prev, Date.now() - createdAt])
-    if (hitTarget && targetSize) {
-      triggerPopEffect(hitTarget.x, hitTarget.y, targetSize.size)
-    }
-    playPopSound()
-  }
-
-  const triggerPopEffect = (x: number, y: number, size: number) => {
-    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-    const effect: PopEffect = { id, x, y, size }
-    setPopEffects((current) => [...current, effect])
-    window.setTimeout(() => {
-      setPopEffects((current) => current.filter((item) => item.id !== id))
-    }, 280)
-  }
-
-  const playPopSound = () => {
-    if (typeof window === 'undefined') return
-    const AudioContextClass = window.AudioContext || (window as typeof window & {
-      webkitAudioContext?: typeof AudioContext
-    }).webkitAudioContext
-    if (!AudioContextClass) return
-    const audioContext =
-      audioContextRef.current ?? (audioContextRef.current = new AudioContextClass())
-    if (audioContext.state === 'suspended') {
-      audioContext.resume().catch(() => undefined)
-    }
-    const oscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
-    oscillator.type = 'triangle'
-    oscillator.frequency.value = 520
-    gainNode.gain.value = 0.0001
-    oscillator.connect(gainNode)
-    gainNode.connect(audioContext.destination)
-    const now = audioContext.currentTime
-    gainNode.gain.exponentialRampToValueAtTime(0.12, now + 0.015)
-    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.18)
-    oscillator.start(now)
-    oscillator.stop(now + 0.2)
   }
 
   const handleSubmitScore = (event: FormEvent) => {
@@ -516,26 +468,12 @@ function App() {
                   height: targetSize?.size,
                   left: target.x,
                   top: target.y,
-                  animationDuration: `${difficulty?.lifetimeMs ?? 1000}ms`,
                 }}
                 onClick={(event) => {
                   event.stopPropagation()
                   handleTargetClick(target.id, target.createdAt)
                 }}
                 aria-label="Hit target"
-              />
-            ))}
-            {popEffects.map((effect) => (
-              <span
-                key={effect.id}
-                className="target-pop"
-                style={{
-                  width: effect.size,
-                  height: effect.size,
-                  left: effect.x,
-                  top: effect.y,
-                }}
-                aria-hidden="true"
               />
             ))}
           </div>
