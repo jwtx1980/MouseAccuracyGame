@@ -74,7 +74,7 @@ const DIFFICULTY_PRESETS: DifficultyPreset[] = [
     description: 'Balanced spawn cadence and target life.',
     spawnRateMs: 650,
     maxTargets: 4,
-    lifetimeMs: 1400,
+    lifetimeMs: 1800,
   },
   {
     id: 'rapid',
