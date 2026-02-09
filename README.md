@@ -71,3 +71,16 @@ export default defineConfig([
   },
 ])
 ```
+
+## Mouse Accuracy Game
+
+### Scoring
+- Hits are worth **+10** points.
+- Misses (clicking the board or letting a target expire) cost **-2** points.
+- Scores never go below **0**.
+
+### Controls
+- Select duration, target size, and difficulty on the Start screen.
+- Click targets as they appear in the game area.
+- Click empty space to record a miss.
+- End a round early with the **End round** button.
