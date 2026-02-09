@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { getSupabaseClient } from './lib/supabase'
 import './App.css'
 
 type Screen = 'start' | 'game' | 'results' | 'scores'
@@ -94,8 +95,6 @@ const DIFFICULTY_PRESETS: DifficultyPreset[] = [
   },
 ]
 
-const STORAGE_KEY = 'mouse-accuracy-high-scores-v1'
-
 const getDefaultSettings = (): Settings => ({
   duration: 30,
   targetSizeId: 'balanced',
@@ -104,21 +103,6 @@ const getDefaultSettings = (): Settings => ({
 
 const buildScoreKey = (settings: Settings) =>
   `${settings.duration}s|${settings.targetSizeId}|${settings.difficultyId}`
-
-const readScores = (): Record<string, ScoreEntry[]> => {
-  if (typeof window === 'undefined') return {}
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return {}
-    return JSON.parse(raw) as Record<string, ScoreEntry[]>
-  } catch {
-    return {}
-  }
-}
-
-const writeScores = (scores: Record<string, ScoreEntry[]>) => {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(scores))
-}
 
 const formatPercent = (value: number) => `${value.toFixed(1)}%`
 
@@ -135,6 +119,8 @@ function App() {
   const [reactionTimes, setReactionTimes] = useState<number[]>([])
   const [pendingName, setPendingName] = useState('')
   const [scores, setScores] = useState<Record<string, ScoreEntry[]>>({})
+  const [scoresError, setScoresError] = useState<string | null>(null)
+  const [isScoresLoading, setIsScoresLoading] = useState(false)
   const [qualifiedForScore, setQualifiedForScore] = useState(false)
   const [popEffects, setPopEffects] = useState<PopEffect[]>([])
 
@@ -143,6 +129,7 @@ function App() {
   const lifetimeInterval = useRef<number | null>(null)
   const timerInterval = useRef<number | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
+  const supabase = useMemo(() => getSupabaseClient(), [])
 
   const targetSize = useMemo(
     () => TARGET_SIZE_PRESETS.find((preset) => preset.id === settings.targetSizeId),
@@ -153,10 +140,6 @@ function App() {
     () => DIFFICULTY_PRESETS.find((preset) => preset.id === settings.difficultyId),
     [settings.difficultyId]
   )
-
-  useEffect(() => {
-    setScores(readScores())
-  }, [])
 
   useEffect(() => {
     setTimeLeft(settings.duration)
@@ -191,16 +174,55 @@ function App() {
   const activeScoreKey = buildScoreKey(settings)
   const activeScores = scores[activeScoreKey] ?? []
 
-  const updateScores = (nextScores: Record<string, ScoreEntry[]>) => {
-    setScores(nextScores)
-    writeScores(nextScores)
-  }
-
   const checkQualification = (nextScore: number) => {
     const currentScores = scores[activeScoreKey] ?? []
     if (currentScores.length < 10) return true
     return currentScores.some((entry) => nextScore > entry.score)
   }
+
+  useEffect(() => {
+    if (!supabase) {
+      setScoresError('Leaderboard unavailable: missing Supabase configuration.')
+      return
+    }
+    let isActive = true
+    setIsScoresLoading(true)
+    setScoresError(null)
+    supabase
+      .from('leaderboard')
+      .select('name, score, accuracy, cps, created_at')
+      .eq('settings_key', activeScoreKey)
+      .order('score', { ascending: false })
+      .limit(10)
+      .then(({ data, error }) => {
+        if (!isActive) return
+        if (error) {
+          setScoresError('Unable to load leaderboard right now.')
+          return
+        }
+        const entries =
+          data?.map((row) => ({
+            name: row.name,
+            score: row.score,
+            accuracy: row.accuracy,
+            cps: row.cps,
+            date: row.created_at,
+          })) ?? []
+        setScores((current) => ({ ...current, [activeScoreKey]: entries }))
+      })
+      .catch(() => {
+        if (!isActive) return
+        setScoresError('Unable to load leaderboard right now.')
+      })
+      .finally(() => {
+        if (!isActive) return
+        setIsScoresLoading(false)
+      })
+
+    return () => {
+      isActive = false
+    }
+  }, [activeScoreKey, supabase])
 
   const handleStartGame = () => {
     resetGameState()
@@ -344,6 +366,10 @@ function App() {
     event.preventDefault()
     const trimmedName = pendingName.trim()
     if (!trimmedName) return
+    if (!supabase) {
+      setScoresError('Leaderboard unavailable: missing Supabase configuration.')
+      return
+    }
     const entry: ScoreEntry = {
       name: trimmedName,
       score,
@@ -351,14 +377,32 @@ function App() {
       cps: clicksPerSecond,
       date: new Date().toISOString(),
     }
-    const updated = { ...scores }
-    const list = [...(updated[activeScoreKey] ?? []), entry]
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10)
-    updated[activeScoreKey] = list
-    updateScores(updated)
-    setQualifiedForScore(false)
-    setPendingName('')
+    supabase
+      .from('leaderboard')
+      .insert({
+        settings_key: activeScoreKey,
+        name: entry.name,
+        score: entry.score,
+        accuracy: entry.accuracy,
+        cps: entry.cps,
+      })
+      .then(({ error }) => {
+        if (error) {
+          setScoresError('Unable to save your score right now.')
+          return
+        }
+        setScores((current) => ({
+          ...current,
+          [activeScoreKey]: [...(current[activeScoreKey] ?? []), entry]
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 10),
+        }))
+        setQualifiedForScore(false)
+        setPendingName('')
+      })
+      .catch(() => {
+        setScoresError('Unable to save your score right now.')
+      })
   }
 
   const selectedDurationLabel = `${settings.duration}s`
@@ -608,6 +652,7 @@ function App() {
                 </div>
               </form>
             )}
+            {scoresError && <p className="scores__error">{scoresError}</p>}
             <div className="panel__actions">
               <button type="button" className="ghost-button" onClick={handleStartGame}>
                 Play again
@@ -642,7 +687,12 @@ function App() {
                   <span>Clicks/sec</span>
                   <span>Date</span>
                 </div>
-                {activeScores.length === 0 && (
+                {isScoresLoading && (
+                  <div className="scores__row scores__row--empty">
+                    <span>Loading leaderboard...</span>
+                  </div>
+                )}
+                {!isScoresLoading && activeScores.length === 0 && (
                   <div className="scores__row scores__row--empty">
                     <span>No scores yet. Be the first!</span>
                   </div>

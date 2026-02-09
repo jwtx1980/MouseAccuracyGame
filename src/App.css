@@ -327,6 +327,12 @@
   gap: 0.5rem;
 }
 
+.scores__error {
+  color: #b91c1c;
+  font-weight: 600;
+  margin: 0;
+}
+
 .scores__row {
   display: grid;
   grid-template-columns: repeat(5, minmax(100px, 1fr));
