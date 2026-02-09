@@ -84,3 +84,11 @@ export default defineConfig([
 - Click targets as they appear in the game area.
 - Click empty space to record a miss.
 - End a round early with the **End round** button.
+
+## Deployment (GitHub Pages)
+
+- Local dev: `npm install` then `npm run dev`.
+- Build: `npm run build`.
+- Pages URL: `https://jwtx1980.github.io/MouseAccuracyGame/`.
+- If the deployed page is blank, confirm Vite's base path is set to `/MouseAccuracyGame/`.
+- In GitHub repo settings, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
