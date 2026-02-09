@@ -42,6 +42,9 @@ type ScoreEntry = {
   accuracy: number
   cps: number
   date: string
+  duration: DurationOption
+  targetSizeId: string
+  difficultyId: string
 }
 
 
@@ -95,21 +98,58 @@ const getDefaultSettings = (): Settings => ({
   difficultyId: 'focused',
 })
 
-const buildScoreKey = (settings: Settings) =>
-  `${settings.duration}s|${settings.targetSizeId}|${settings.difficultyId}`
-
-const readScores = (): Record<string, ScoreEntry[]> => {
-  if (typeof window === 'undefined') return {}
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return {}
-    return JSON.parse(raw) as Record<string, ScoreEntry[]>
-  } catch {
-    return {}
+const parseScoreKey = (key: string): Settings | null => {
+  const [durationRaw, targetSizeId, difficultyId] = key.split('|')
+  if (!durationRaw || !targetSizeId || !difficultyId) return null
+  const durationValue = Number(durationRaw.replace('s', ''))
+  if (!DURATION_OPTIONS.includes(durationValue as DurationOption)) return null
+  return {
+    duration: durationValue as DurationOption,
+    targetSizeId,
+    difficultyId,
   }
 }
 
-const writeScores = (scores: Record<string, ScoreEntry[]>) => {
+const normalizeEntry = (
+  entry: ScoreEntry | Omit<ScoreEntry, 'duration' | 'targetSizeId' | 'difficultyId'>,
+  fallback: Settings
+): ScoreEntry => ({
+  ...entry,
+  duration: 'duration' in entry ? entry.duration : fallback.duration,
+  targetSizeId: 'targetSizeId' in entry ? entry.targetSizeId : fallback.targetSizeId,
+  difficultyId: 'difficultyId' in entry ? entry.difficultyId : fallback.difficultyId,
+})
+
+const sortScores = (entries: ScoreEntry[]) =>
+  [...entries].sort((a, b) => b.score - a.score).slice(0, 10)
+
+const readScores = (): ScoreEntry[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return sortScores(
+        parsed.map((entry) => normalizeEntry(entry, getDefaultSettings()))
+      )
+    }
+    if (parsed && typeof parsed === 'object') {
+      const entries = Object.entries(parsed as Record<string, ScoreEntry[]>).flatMap(
+        ([key, value]) => {
+          const fallback = parseScoreKey(key) ?? getDefaultSettings()
+          return value.map((entry) => normalizeEntry(entry, fallback))
+        }
+      )
+      return sortScores(entries)
+    }
+    return []
+  } catch {
+    return []
+  }
+}
+
+const writeScores = (scores: ScoreEntry[]) => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(scores))
 }
 
@@ -127,7 +167,7 @@ function App() {
   const [totalClicks, setTotalClicks] = useState(0)
   const [reactionTimes, setReactionTimes] = useState<number[]>([])
   const [pendingName, setPendingName] = useState('')
-  const [scores, setScores] = useState<Record<string, ScoreEntry[]>>({})
+  const [scores, setScores] = useState<ScoreEntry[]>([])
   const [qualifiedForScore, setQualifiedForScore] = useState(false)
 
   const boardRef = useRef<HTMLDivElement | null>(null)
@@ -179,18 +219,18 @@ function App() {
     ? reactionTimes.reduce((sum, value) => sum + value, 0) / reactionTimes.length
     : 0
 
-  const activeScoreKey = buildScoreKey(settings)
-  const activeScores = scores[activeScoreKey] ?? []
+  const activeScores = useMemo(() => sortScores(scores), [scores])
 
-  const updateScores = (nextScores: Record<string, ScoreEntry[]>) => {
-    setScores(nextScores)
-    writeScores(nextScores)
+  const updateScores = (nextScores: ScoreEntry[]) => {
+    const sorted = sortScores(nextScores)
+    setScores(sorted)
+    writeScores(sorted)
   }
 
   const checkQualification = (nextScore: number) => {
-    const currentScores = scores[activeScoreKey] ?? []
-    if (currentScores.length < 10) return true
-    return currentScores.some((entry) => nextScore > entry.score)
+    if (activeScores.length < 10) return true
+    const threshold = activeScores[activeScores.length - 1]
+    return nextScore > threshold.score
   }
 
   const handleStartGame = () => {
@@ -302,21 +342,17 @@ function App() {
       accuracy,
       cps: clicksPerSecond,
       date: new Date().toISOString(),
+      duration: settings.duration,
+      targetSizeId: settings.targetSizeId,
+      difficultyId: settings.difficultyId,
     }
-    const updated = { ...scores }
-    const list = [...(updated[activeScoreKey] ?? []), entry]
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10)
-    updated[activeScoreKey] = list
-    updateScores(updated)
+    updateScores([...scores, entry])
     setQualifiedForScore(false)
     setPendingName('')
   }
 
   const handleClearScores = () => {
-    const updated = { ...scores }
-    delete updated[activeScoreKey]
-    updateScores(updated)
+    updateScores([])
   }
 
   const selectedDurationLabel = `${settings.duration}s`
@@ -329,6 +365,16 @@ function App() {
       day: 'numeric',
       year: 'numeric',
     })
+
+  const formatScoreSettings = (entry: ScoreEntry) => {
+    const targetLabel =
+      TARGET_SIZE_PRESETS.find((preset) => preset.id === entry.targetSizeId)?.label ??
+      entry.targetSizeId
+    const difficultyLabel =
+      DIFFICULTY_PRESETS.find((preset) => preset.id === entry.difficultyId)?.label ??
+      entry.difficultyId
+    return `${entry.duration}s · ${targetLabel} · ${difficultyLabel}`
+  }
 
   return (
     <div className="app">
@@ -536,7 +582,7 @@ function App() {
               <form className="score-form" onSubmit={handleSubmitScore}>
                 <div>
                   <h3>New high score!</h3>
-                  <p>Enter your name to save it to this setting combo.</p>
+                  <p>Enter your name to save it to the global leaderboard.</p>
                 </div>
                 <div className="score-form__fields">
                   <input
@@ -573,15 +619,13 @@ function App() {
             <div className="scores">
               <div className="scores__header">
                 <h2>High scores</h2>
-                <p>
-                  Showing top 10 for {selectedDurationLabel} · {selectedTargetLabel} ·{' '}
-                  {selectedDifficultyLabel}
-                </p>
+                <p>Global top 10 across all sessions and settings.</p>
               </div>
               <div className="scores__table">
                 <div className="scores__row scores__row--head">
                   <span>Name</span>
                   <span>Score</span>
+                  <span>Mode</span>
                   <span>Accuracy</span>
                   <span>Clicks/sec</span>
                   <span>Date</span>
@@ -595,6 +639,7 @@ function App() {
                   <div key={`${entry.name}-${entry.date}-${index}`} className="scores__row">
                     <span>{entry.name}</span>
                     <span>{entry.score}</span>
+                    <span>{formatScoreSettings(entry)}</span>
                     <span>{formatPercent(entry.accuracy)}</span>
                     <span>{formatNumber(entry.cps)}</span>
                     <span>{formatDate(entry.date)}</span>
