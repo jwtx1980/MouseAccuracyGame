@@ -185,10 +185,6 @@ function App() {
   const score = Math.max(0, hits * 10 - misses * 2)
   const accuracy = totalClicks ? (hits / totalClicks) * 100 : 0
   const clicksPerSecond = settings.duration ? totalClicks / settings.duration : 0
-  const avgReactionTime = reactionTimes.length
-    ? reactionTimes.reduce((sum, value) => sum + value, 0) / reactionTimes.length
-    : 0
-
   const activeScoreKey = buildScoreKey(settings)
   const activeScores = scores.global ?? []
 
