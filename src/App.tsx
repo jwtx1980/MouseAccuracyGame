@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { getSupabaseClient } from './lib/supabase'
 import './App.css'
 
-type Screen = 'start' | 'game' | 'results' | 'scores'
+type Screen = 'start' | 'game' | 'results'
 
 const DURATION_OPTIONS = [10, 20, 30, 60] as const
 type DurationOption = (typeof DURATION_OPTIONS)[number]
@@ -138,6 +138,9 @@ function App() {
   const [isScoresLoading, setIsScoresLoading] = useState(false)
   const [qualifiedForScore, setQualifiedForScore] = useState(false)
   const [popEffects, setPopEffects] = useState<PopEffect[]>([])
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isCountdownActive, setIsCountdownActive] = useState(false)
+  const [countdownValue, setCountdownValue] = useState(3)
 
   const boardRef = useRef<HTMLDivElement | null>(null)
   const spawnTimeout = useRef<number | null>(null)
@@ -182,10 +185,6 @@ function App() {
   const score = Math.max(0, hits * 10 - misses * 2)
   const accuracy = totalClicks ? (hits / totalClicks) * 100 : 0
   const clicksPerSecond = settings.duration ? totalClicks / settings.duration : 0
-  const avgReactionTime = reactionTimes.length
-    ? reactionTimes.reduce((sum, value) => sum + value, 0) / reactionTimes.length
-    : 0
-
   const activeScoreKey = buildScoreKey(settings)
   const activeScores = scores.global ?? []
 
@@ -242,18 +241,13 @@ function App() {
   }, [activeScoreKey, supabase])
 
   const handleStartGame = () => {
-    resetGameState()
-    setScreen('game')
-    window.setTimeout(() => {
-      startTimer()
-      startTargetLoop()
-      startLifetimeCleanup()
-    }, 0)
-  }
-
-  const handleExitGame = () => {
     stopAllLoops()
+    resetGameState()
+    setTargets([])
     setScreen('start')
+    setIsSettingsOpen(false)
+    setCountdownValue(3)
+    setIsCountdownActive(true)
   }
 
   const stopAllLoops = () => {
@@ -264,10 +258,36 @@ function App() {
 
   const endGame = () => {
     stopAllLoops()
+    setTargets([])
     const qualified = checkQualification(score)
     setQualifiedForScore(qualified)
     setScreen('results')
   }
+
+  useEffect(() => {
+    if (screen !== 'results') return
+    setQualifiedForScore(checkQualification(score))
+  }, [screen, score, scores])
+
+  useEffect(() => {
+    if (!isCountdownActive) return
+    if (countdownValue > 0) {
+      const timeout = window.setTimeout(() => {
+        setCountdownValue((value) => value - 1)
+      }, 1000)
+      return () => window.clearTimeout(timeout)
+    }
+
+    const startTimeout = window.setTimeout(() => {
+      setIsCountdownActive(false)
+      setScreen('game')
+      startTimer()
+      startTargetLoop()
+      startLifetimeCleanup()
+    }, 700)
+
+    return () => window.clearTimeout(startTimeout)
+  }, [countdownValue, isCountdownActive])
 
   const startTimer = () => {
     setTimeLeft(settings.duration)
@@ -442,114 +462,51 @@ function App() {
 
   return (
     <div className="app">
-      <header className="app__header">
-        <div>
-          <p className="app__eyebrow">Mouse Accuracy Lab</p>
-          <h1>Click Cadence</h1>
-          <p className="app__subtitle">
-            Tune your aim, pace, and focus. Hit the targets before they fade.
-          </p>
+      <main className="stage">
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => setIsSettingsOpen(true)}
+          aria-label="Open settings"
+        >
+          ⚙
+        </button>
+        <div className="game__board" ref={boardRef} onClick={handleBoardClick}>
+          {targets.map((target) => (
+            <button
+              key={target.id}
+              type="button"
+              className="target"
+              style={{
+                width: targetSize?.size,
+                height: targetSize?.size,
+                left: target.x,
+                top: target.y,
+                animationDuration: `${difficulty?.lifetimeMs ?? 1000}ms`,
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                handleTargetClick(target.id, target.createdAt)
+              }}
+              aria-label="Hit target"
+            />
+          ))}
+          {popEffects.map((effect) => (
+            <span
+              key={effect.id}
+              className="target-pop"
+              style={{
+                width: effect.size,
+                height: effect.size,
+                left: effect.x,
+                top: effect.y,
+              }}
+              aria-hidden="true"
+            />
+          ))}
         </div>
-        <div className="app__header-actions">
-          <button
-            type="button"
-            className={`ghost-button ${screen === 'start' ? 'is-active' : ''}`}
-            onClick={() => setScreen('start')}
-          >
-            Start
-          </button>
-          <button
-            type="button"
-            className={`ghost-button ${screen === 'scores' ? 'is-active' : ''}`}
-            onClick={() => setScreen('scores')}
-          >
-            High Scores
-          </button>
-        </div>
-      </header>
-
-      {screen === 'start' && (
-        <section className="panel">
-          <div className="panel__content">
-            <div className="settings">
-              <div className="settings__group">
-                <h2>Session length</h2>
-                <div className="settings__options">
-                  {DURATION_OPTIONS.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={`chip ${settings.duration === option ? 'is-selected' : ''}`}
-                      onClick={() =>
-                        setSettings((current) => ({ ...current, duration: option }))
-                      }
-                    >
-                      {option}s
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="settings__group">
-                <h2>Target size</h2>
-                <div className="settings__options">
-                  {TARGET_SIZE_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={`chip ${settings.targetSizeId === preset.id ? 'is-selected' : ''}`}
-                      onClick={() =>
-                        setSettings((current) => ({ ...current, targetSizeId: preset.id }))
-                      }
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="settings__group">
-                <h2>Difficulty</h2>
-                <div className="settings__options settings__options--cards">
-                  {DIFFICULTY_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={`card-option ${
-                        settings.difficultyId === preset.id ? 'is-selected' : ''
-                      }`}
-                      onClick={() =>
-                        setSettings((current) => ({ ...current, difficultyId: preset.id }))
-                      }
-                    >
-                      <span className="card-option__title">{preset.label}</span>
-                      <span className="card-option__desc">{preset.description}</span>
-                      <span className="card-option__meta">
-                        {preset.spawnRateMs}ms spawn · max {preset.maxTargets} ·{' '}
-                        {preset.lifetimeMs}ms life
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="panel__actions">
-              <div className="panel__summary">
-                <h3>Ready to play?</h3>
-                <p>
-                  {selectedDurationLabel} · {selectedTargetLabel} ·{' '}
-                  {selectedDifficultyLabel}
-                </p>
-              </div>
-              <button type="button" className="primary-button" onClick={handleStartGame}>
-                Start round
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {screen === 'game' && (
-        <section className="game">
-          <div className="game__hud">
+        {screen === 'game' && (
+          <div className="game__hud game__hud--minimal">
             <div className="hud-card">
               <span>Time</span>
               <strong>{timeLeft}s</strong>
@@ -558,102 +515,52 @@ function App() {
               <span>Score</span>
               <strong>{score}</strong>
             </div>
-            <div className="hud-card">
-              <span>Hits</span>
-              <strong>{hits}</strong>
-            </div>
-            <div className="hud-card">
-              <span>Misses</span>
-              <strong>{misses}</strong>
-            </div>
           </div>
-          <div className="game__board" ref={boardRef} onClick={handleBoardClick}>
-            {targets.map((target) => (
-              <button
-                key={target.id}
-                type="button"
-                className="target"
-                style={{
-                  width: targetSize?.size,
-                  height: targetSize?.size,
-                  left: target.x,
-                  top: target.y,
-                  animationDuration: `${difficulty?.lifetimeMs ?? 1000}ms`,
-                }}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  handleTargetClick(target.id, target.createdAt)
-                }}
-                aria-label="Hit target"
-              />
-            ))}
-            {popEffects.map((effect) => (
-              <span
-                key={effect.id}
-                className="target-pop"
-                style={{
-                  width: effect.size,
-                  height: effect.size,
-                  left: effect.x,
-                  top: effect.y,
-                }}
-                aria-hidden="true"
-              />
-            ))}
-          </div>
-          <div className="game__footer">
-            <div className="game__summary">
-              <span>Clicks/sec: {formatNumber(clicksPerSecond)}</span>
-              <span>Accuracy: {formatPercent(accuracy)}</span>
-              <span>
-                Avg reaction: {avgReactionTime ? `${formatNumber(avgReactionTime, 0)}ms` : '--'}
-              </span>
-            </div>
-            <button type="button" className="ghost-button" onClick={handleExitGame}>
-              End round
+        )}
+      </main>
+
+      {screen === 'start' && !isCountdownActive && (
+        <div className="overlay start-overlay">
+          <div className="start-overlay__content">
+            <p className="app__eyebrow">Mouse Accuracy Lab</p>
+            <h1>Click Cadence</h1>
+            <p className="app__subtitle">
+              Tune your aim, pace, and focus. Hit the targets before they fade.
+            </p>
+            <button type="button" className="primary-button" onClick={handleStartGame}>
+              Start round
             </button>
           </div>
-        </section>
+        </div>
+      )}
+
+      {isCountdownActive && (
+        <div className="overlay countdown-overlay" aria-live="assertive">
+          <span>{countdownValue > 0 ? countdownValue : 'GO'}</span>
+        </div>
       )}
 
       {screen === 'results' && (
-        <section className="panel">
-          <div className="panel__content">
-            <div className="results">
-              <div className="results__header">
-                <h2>Round results</h2>
-                <p>
-                  {selectedDurationLabel} · {selectedTargetLabel} ·{' '}
-                  {selectedDifficultyLabel}
-                </p>
+        <div className="overlay results-overlay">
+          <div className="results-panel">
+            <div className="results__header">
+              <h2>Round results</h2>
+              <p>
+                {selectedDurationLabel} · {selectedTargetLabel} · {selectedDifficultyLabel}
+              </p>
+            </div>
+            <div className="results__highlight">
+              <span>Score</span>
+              <strong>{score}</strong>
+            </div>
+            <div className="results__stats results__stats--compact">
+              <div className="stat-card">
+                <span>Accuracy</span>
+                <strong>{formatPercent(accuracy)}</strong>
               </div>
-              <div className="results__stats">
-                <div className="stat-card">
-                  <span>Score</span>
-                  <strong>{score}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Hits</span>
-                  <strong>{hits}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Misses</span>
-                  <strong>{misses}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Accuracy</span>
-                  <strong>{formatPercent(accuracy)}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Clicks/sec</span>
-                  <strong>{formatNumber(clicksPerSecond)}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Avg reaction</span>
-                  <strong>
-                    {avgReactionTime ? `${formatNumber(avgReactionTime, 0)}ms` : '--'}
-                  </strong>
-                </div>
+              <div className="stat-card">
+                <span>Clicks/sec</span>
+                <strong>{formatNumber(clicksPerSecond)}</strong>
               </div>
             </div>
             {qualifiedForScore && (
@@ -677,67 +584,147 @@ function App() {
               </form>
             )}
             {scoresError && <p className="scores__error">{scoresError}</p>}
-            <div className="panel__actions">
-              <button type="button" className="ghost-button" onClick={handleStartGame}>
-                Play again
-              </button>
-              <button type="button" className="ghost-button" onClick={() => setScreen('scores')}>
-                View high scores
-              </button>
-              <button type="button" className="primary-button" onClick={() => setScreen('start')}>
-                Change settings
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {screen === 'scores' && (
-        <section className="panel">
-          <div className="panel__content">
-            <div className="scores">
-              <div className="scores__header">
-                <h2>High scores</h2>
-                <p>Showing global top 10 across all settings.</p>
+            <div className="leaderboard">
+              <div className="leaderboard__header">
+                <h3>Global Top 10</h3>
+                <p>Across all settings</p>
               </div>
-              <div className="scores__table">
-                <div className="scores__row scores__row--head">
+              <div className="leaderboard__table">
+                <div className="leaderboard__row leaderboard__row--head">
                   <span>Name</span>
                   <span>Score</span>
                   <span>Accuracy</span>
                   <span>Clicks/sec</span>
-                  <span>Settings</span>
                   <span>Date</span>
                 </div>
                 {isScoresLoading && (
-                  <div className="scores__row scores__row--empty">
+                  <div className="leaderboard__row leaderboard__row--empty">
                     <span>Loading leaderboard...</span>
                   </div>
                 )}
                 {!isScoresLoading && activeScores.length === 0 && (
-                  <div className="scores__row scores__row--empty">
+                  <div className="leaderboard__row leaderboard__row--empty">
                     <span>No scores yet. Be the first!</span>
                   </div>
                 )}
                 {activeScores.map((entry, index) => (
-                  <div key={`${entry.name}-${entry.date}-${index}`} className="scores__row">
+                  <div key={`${entry.name}-${entry.date}-${index}`} className="leaderboard__row">
                     <span>{entry.name}</span>
                     <span>{entry.score}</span>
                     <span>{formatPercent(entry.accuracy)}</span>
                     <span>{formatNumber(entry.cps)}</span>
-                    <span>{entry.settingsKey}</span>
                     <span>{formatDate(entry.date)}</span>
                   </div>
                 ))}
               </div>
-              <div className="scores__footer">
-                <button type="button" className="primary-button" onClick={() => setScreen('start')}>
-                  Back to settings
-                </button>
-              </div>
+            </div>
+            <div className="results__actions">
+              <button type="button" className="primary-button" onClick={handleStartGame}>
+                Start new round
+              </button>
+              <button type="button" className="ghost-button" onClick={() => setScreen('start')}>
+                Back to start
+              </button>
             </div>
           </div>
-        </section>
+        </div>
+      )}
+
+      {isSettingsOpen && (
+        <div className="overlay settings-overlay" role="dialog" aria-modal="true">
+          <div className="settings-panel">
+            <div className="settings-panel__header">
+              <h2>Settings</h2>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setIsSettingsOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="settings">
+              <div className="settings__group">
+                <h3>Session length</h3>
+                <label className="settings__field">
+                  <span className="settings__label">Choose round time</span>
+                  <select
+                    className="settings__select"
+                    value={settings.duration}
+                    onChange={(event) =>
+                      setSettings((current) => ({
+                        ...current,
+                        duration: Number(event.target.value) as DurationOption,
+                      }))
+                    }
+                  >
+                    {DURATION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}s
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="settings__group">
+                <h3>Target size</h3>
+                <label className="settings__field">
+                  <span className="settings__label">Select target size</span>
+                  <select
+                    className="settings__select"
+                    value={settings.targetSizeId}
+                    onChange={(event) =>
+                      setSettings((current) => ({
+                        ...current,
+                        targetSizeId: event.target.value,
+                      }))
+                    }
+                  >
+                    {TARGET_SIZE_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="settings__group">
+                <h3>Difficulty</h3>
+                <label className="settings__field">
+                  <span className="settings__label">Pick a difficulty</span>
+                  <select
+                    className="settings__select"
+                    value={settings.difficultyId}
+                    onChange={(event) =>
+                      setSettings((current) => ({
+                        ...current,
+                        difficultyId: event.target.value,
+                      }))
+                    }
+                  >
+                    {DIFFICULTY_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label} — {preset.description}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div className="settings-panel__footer">
+              <button type="button" className="primary-button" onClick={handleStartGame}>
+                Start round
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setIsSettingsOpen(false)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
