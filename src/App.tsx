@@ -140,6 +140,7 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isCountdownActive, setIsCountdownActive] = useState(false)
   const [countdownValue, setCountdownValue] = useState(3)
+  const [hasSubmittedScore, setHasSubmittedScore] = useState(false)
 
   const boardRef = useRef<HTMLDivElement | null>(null)
   const spawnTimeout = useRef<number | null>(null)
@@ -178,6 +179,7 @@ function App() {
     setTimeLeft(settings.duration)
     setQualifiedForScore(false)
     setPendingName('')
+    setHasSubmittedScore(false)
   }
 
   const score = Math.max(0, hits * 10 - misses * 2)
@@ -264,8 +266,8 @@ function App() {
 
   useEffect(() => {
     if (screen !== 'results') return
-    setQualifiedForScore(checkQualification(score))
-  }, [screen, score, scores])
+    setQualifiedForScore(hasSubmittedScore ? false : checkQualification(score))
+  }, [screen, score, scores, hasSubmittedScore])
 
   useEffect(() => {
     if (!isCountdownActive) return
@@ -400,6 +402,7 @@ function App() {
     event.preventDefault()
     const trimmedName = pendingName.trim()
     if (!trimmedName) return
+    if (hasSubmittedScore) return
     if (!supabase) {
       setScoresError('Leaderboard unavailable: missing Supabase configuration.')
       return
@@ -438,6 +441,7 @@ function App() {
         }))
         setQualifiedForScore(false)
         setPendingName('')
+        setHasSubmittedScore(true)
       } catch {
         setScoresError('Unable to save your score right now.')
       }
@@ -483,7 +487,7 @@ function App() {
               }}
               onClick={(event) => {
                 event.stopPropagation()
-                  handleTargetClick(target.id)
+                handleTargetClick(target.id)
               }}
               aria-label="Hit target"
             />
