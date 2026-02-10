@@ -335,7 +335,7 @@
 
 .scores__row {
   display: grid;
-  grid-template-columns: repeat(5, minmax(100px, 1fr));
+  grid-template-columns: repeat(6, minmax(100px, 1fr));
   gap: 0.75rem;
   padding: 0.6rem 0.8rem;
   border-radius: 12px;
@@ -371,7 +371,8 @@
 
   .scores__row span:nth-child(3),
   .scores__row span:nth-child(4),
-  .scores__row span:nth-child(5) {
+  .scores__row span:nth-child(5),
+  .scores__row span:nth-child(6) {
     display: none;
   }
 }

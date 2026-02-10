@@ -50,6 +50,7 @@ type ScoreEntry = {
   accuracy: number
   cps: number
   date: string
+  settingsKey: string
 }
 
 
@@ -107,6 +108,20 @@ const buildScoreKey = (settings: Settings) =>
 const formatPercent = (value: number) => `${value.toFixed(1)}%`
 
 const formatNumber = (value: number, digits = 1) => value.toFixed(digits)
+
+const USER_ID_STORAGE_KEY = 'mouse-accuracy-user-id-v1'
+
+const getStableUserId = () => {
+  if (typeof window === 'undefined') return 'server'
+  const existing = window.localStorage.getItem(USER_ID_STORAGE_KEY)
+  if (existing) return existing
+  const newId =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  window.localStorage.setItem(USER_ID_STORAGE_KEY, newId)
+  return newId
+}
 
 function App() {
   const [screen, setScreen] = useState<Screen>('start')
@@ -172,10 +187,10 @@ function App() {
     : 0
 
   const activeScoreKey = buildScoreKey(settings)
-  const activeScores = scores[activeScoreKey] ?? []
+  const activeScores = scores.global ?? []
 
   const checkQualification = (nextScore: number) => {
-    const currentScores = scores[activeScoreKey] ?? []
+    const currentScores = scores.global ?? []
     if (currentScores.length < 10) return true
     return currentScores.some((entry) => nextScore > entry.score)
   }
@@ -191,9 +206,8 @@ function App() {
     const loadScores = async () => {
       try {
         const { data, error } = await supabase
-          .from('leaderboard')
-          .select('name, score, accuracy, cps, created_at')
-          .eq('settings_key', activeScoreKey)
+          .from('leaderboard_scores')
+          .select('name, score, accuracy, cps, created_at, settings_key')
           .order('score', { ascending: false })
           .limit(10)
         if (!isActive) return
@@ -208,8 +222,9 @@ function App() {
             accuracy: row.accuracy,
             cps: row.cps,
             date: row.created_at,
+            settingsKey: row.settings_key,
           })) ?? []
-        setScores((current) => ({ ...current, [activeScoreKey]: entries }))
+        setScores((current) => ({ ...current, global: entries }))
       } catch {
         if (!isActive) return
         setScoresError('Unable to load leaderboard right now.')
@@ -378,12 +393,18 @@ function App() {
       accuracy,
       cps: clicksPerSecond,
       date: new Date().toISOString(),
+      settingsKey: activeScoreKey,
     }
     const saveScore = async () => {
       try {
-        const { error } = await supabase.from('leaderboard').insert({
-          settings_key: activeScoreKey,
+        const { error } = await supabase.from('leaderboard_scores').insert({
+          settings_key: entry.settingsKey,
           name: entry.name,
+          user_id: getStableUserId(),
+          run_id:
+            typeof crypto !== 'undefined' && 'randomUUID' in crypto
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
           score: entry.score,
           accuracy: entry.accuracy,
           cps: entry.cps,
@@ -394,7 +415,7 @@ function App() {
         }
         setScores((current) => ({
           ...current,
-          [activeScoreKey]: [...(current[activeScoreKey] ?? []), entry]
+          global: [...(current.global ?? []), entry]
             .sort((a, b) => b.score - a.score)
             .slice(0, 10),
         }))
@@ -639,7 +660,7 @@ function App() {
               <form className="score-form" onSubmit={handleSubmitScore}>
                 <div>
                   <h3>New high score!</h3>
-                  <p>Enter your name to save it to this setting combo.</p>
+                  <p>Enter your name to save it to the global leaderboard.</p>
                 </div>
                 <div className="score-form__fields">
                   <input
@@ -677,10 +698,7 @@ function App() {
             <div className="scores">
               <div className="scores__header">
                 <h2>High scores</h2>
-                <p>
-                  Showing top 10 for {selectedDurationLabel} · {selectedTargetLabel} ·{' '}
-                  {selectedDifficultyLabel}
-                </p>
+                <p>Showing global top 10 across all settings.</p>
               </div>
               <div className="scores__table">
                 <div className="scores__row scores__row--head">
@@ -688,6 +706,7 @@ function App() {
                   <span>Score</span>
                   <span>Accuracy</span>
                   <span>Clicks/sec</span>
+                  <span>Settings</span>
                   <span>Date</span>
                 </div>
                 {isScoresLoading && (
@@ -706,6 +725,7 @@ function App() {
                     <span>{entry.score}</span>
                     <span>{formatPercent(entry.accuracy)}</span>
                     <span>{formatNumber(entry.cps)}</span>
+                    <span>{entry.settingsKey}</span>
                     <span>{formatDate(entry.date)}</span>
                   </div>
                 ))}
