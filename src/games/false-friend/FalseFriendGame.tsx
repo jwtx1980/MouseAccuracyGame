@@ -3,6 +3,8 @@ import './FalseFriendGame.css'
 
 type Phase = 'start' | 'countdown' | 'ruleCard' | 'playing' | 'dead'
 
+type RuleMode = 'color' | 'shape' | 'color-shape' | 'full'
+
 type Orb = {
   id: string
   isFriend: boolean
@@ -17,6 +19,7 @@ type Orb = {
 
 type Rule = {
   id: string
+  mode: RuleMode
   title: string
   sentence: string
   example: string
@@ -25,120 +28,164 @@ type Rule = {
   friendHue: number
 }
 
-const OBJECTS_PER_ROUND = 20
+const BASE_OBJECTS_PER_ROUND = 20
 const FRIENDS_PER_ROUND = 4
 const ON_SCREEN_MS = 2000
 const RULE_CARD_MS = 3000
 const FALSE_EXPIRE_POINTS = 10
-
-const RULES: Rule[] = [
-  {
-    id: 'north-notch',
-    title: 'North Notch',
-    sentence: 'Click only circles with the notch at the top.',
-    example: 'Friend: notch at 12 o’clock. False friend: notch one step off.',
-    friendDotCount: 1,
-    friendNotchStep: 0,
-    friendHue: 205,
-  },
-  {
-    id: 'double-dot',
-    title: 'Double Dot',
-    sentence: 'Click only circles that show exactly two dots.',
-    example: 'Friend: two dots. False friend: one or three dots.',
-    friendDotCount: 2,
-    friendNotchStep: 2,
-    friendHue: 182,
-  },
-  {
-    id: 'west-notch-dots',
-    title: 'West Marker',
-    sentence: 'Click circles with a left notch and three dots.',
-    example: 'Friend: notch at 9 o’clock + three dots.',
-    friendDotCount: 3,
-    friendNotchStep: 6,
-    friendHue: 36,
-  },
-]
+const HUES = [24, 46, 78, 130, 178, 205, 242, 292, 334]
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function getRule(roundNumber: number) {
-  return RULES[(roundNumber - 1) % RULES.length]
+function getSpawnGap(roundNumber: number) {
+  return Math.max(220, 840 - (roundNumber - 1) * 52)
 }
 
-function getSpawnGap(roundNumber: number) {
-  return Math.max(280, 780 - (roundNumber - 1) * 45)
+function getObjectsPerRound(roundNumber: number) {
+  return BASE_OBJECTS_PER_ROUND + Math.min(10, Math.floor((roundNumber - 1) / 2))
 }
 
 function getNearMissWeight(roundNumber: number) {
-  return clamp(0.35 + (roundNumber - 1) * 0.08, 0.35, 0.92)
+  return clamp(0.25 + (roundNumber - 1) * 0.09, 0.25, 0.96)
 }
 
-function makeFalsePreview(rule: Rule, roundNumber: number) {
-  const mode = roundNumber % 3
-  if (mode === 0) {
+function getRule(roundNumber: number): Rule {
+  const hue = HUES[(roundNumber - 1) % HUES.length]
+  const dotCount = (roundNumber + 1) % 5
+  const notchStep = ((roundNumber - 1) * 2) % 8
+
+  if (roundNumber <= 3) {
     return {
-      dotCount: rule.friendDotCount,
-      notchStep: (rule.friendNotchStep + 1) % 8,
-      hue: rule.friendHue,
+      id: `color-${roundNumber}`,
+      mode: 'color',
+      title: `Color Lock ${roundNumber}`,
+      sentence: `Click only circles with the target color.` ,
+      example: `Friend: same color. False friend: any other color, even if shape looks identical.`,
+      friendDotCount: 2,
+      friendNotchStep: 0,
+      friendHue: hue,
     }
   }
 
-  if (mode === 1) {
+  if (roundNumber <= 6) {
     return {
-      dotCount: clamp(rule.friendDotCount + 1, 0, 4),
-      notchStep: rule.friendNotchStep,
-      hue: rule.friendHue,
+      id: `shape-${roundNumber}`,
+      mode: 'shape',
+      title: `Shape Lock ${roundNumber - 3}`,
+      sentence: `Click only circles with exactly ${dotCount} dots.`,
+      example: `Friend: ${dotCount} dots. False friend: nearby dot counts and misleading colors.`,
+      friendDotCount: dotCount,
+      friendNotchStep: 1,
+      friendHue: 198,
+    }
+  }
+
+  if (roundNumber <= 9) {
+    return {
+      id: `color-shape-${roundNumber}`,
+      mode: 'color-shape',
+      title: `Dual Lock ${roundNumber - 6}`,
+      sentence: `Click only circles that match BOTH the color and ${dotCount} dots.`,
+      example: `Must match both traits. One match is still false.`,
+      friendDotCount: dotCount,
+      friendNotchStep: 2,
+      friendHue: hue,
     }
   }
 
   return {
-    dotCount: rule.friendDotCount,
-    notchStep: rule.friendNotchStep,
-    hue: rule.friendHue + 12,
+    id: `full-${roundNumber}`,
+    mode: 'full',
+    title: `Tri-Lock ${roundNumber - 9}`,
+    sentence: `Click only circles matching color, ${dotCount} dots, and notch position.`,
+    example: `Late game: all three cues matter. Near misses will feel very close.`,
+    friendDotCount: dotCount,
+    friendNotchStep: notchStep,
+    friendHue: hue,
   }
 }
 
 function makeOrb(roundNumber: number, rule: Rule, isFriend: boolean, index: number): Orb {
   const nearMissWeight = getNearMissWeight(roundNumber)
-  const baseSize = clamp(86 - roundNumber * 1.5, 56, 90)
-  const sizeWobble = (Math.random() - 0.5) * 8
-  const size = baseSize + sizeWobble
+  const baseSize = clamp(86 - roundNumber * 1.8, 52, 88)
+  const size = baseSize + (Math.random() - 0.5) * 10
 
   let dotCount = rule.friendDotCount
   let notchStep = rule.friendNotchStep
   let hue = rule.friendHue
 
   if (!isFriend) {
-    const buildNearMiss = Math.random() < nearMissWeight
+    const nearMiss = Math.random() < nearMissWeight
 
-    if (buildNearMiss) {
-      const mutation = Math.floor(Math.random() * 3)
-      if (mutation === 0) {
+    const mutateHue = () => {
+      const delta = nearMiss ? (Math.random() < 0.5 ? -12 : 12) : Math.random() < 0.5 ? -30 : 30
+      hue = rule.friendHue + delta
+    }
+
+    const mutateDots = () => {
+      if (nearMiss) {
         dotCount = clamp(rule.friendDotCount + (Math.random() < 0.5 ? -1 : 1), 0, 4)
-      } else if (mutation === 1) {
-        notchStep = (rule.friendNotchStep + (Math.random() < 0.5 ? -1 : 1) + 8) % 8
       } else {
-        hue = rule.friendHue + (Math.random() < 0.5 ? -12 : 12)
+        dotCount = Math.floor(Math.random() * 5)
+        if (dotCount === rule.friendDotCount) {
+          dotCount = (dotCount + 2) % 5
+        }
+      }
+    }
+
+    const mutateNotch = () => {
+      notchStep = nearMiss
+        ? (rule.friendNotchStep + (Math.random() < 0.5 ? -1 : 1) + 8) % 8
+        : (rule.friendNotchStep + 3 + Math.floor(Math.random() * 4)) % 8
+    }
+
+    if (rule.mode === 'color') {
+      mutateHue()
+      if (!nearMiss && Math.random() < 0.5) {
+        mutateDots()
+      }
+    } else if (rule.mode === 'shape') {
+      mutateDots()
+      hue = nearMiss ? 198 + (Math.random() < 0.5 ? -8 : 8) : 198 + (Math.random() < 0.5 ? -24 : 24)
+      if (!nearMiss && Math.random() < 0.4) {
+        mutateNotch()
+      }
+    } else if (rule.mode === 'color-shape') {
+      const mutationOrder = Math.random() < 0.5 ? ['color', 'shape'] : ['shape', 'color']
+      mutationOrder.forEach((mutation) => {
+        if (mutation === 'color') {
+          mutateHue()
+        } else {
+          mutateDots()
+        }
+      })
+      if (!nearMiss && Math.random() < 0.55) {
+        mutateNotch()
       }
     } else {
-      dotCount = clamp(Math.floor(Math.random() * 5), 0, 4)
-      if (dotCount === rule.friendDotCount) {
-        dotCount = (dotCount + 2) % 5
+      const mutation = Math.floor(Math.random() * 3)
+      if (mutation === 0) {
+        mutateHue()
+      } else if (mutation === 1) {
+        mutateDots()
+      } else {
+        mutateNotch()
       }
-      notchStep = Math.floor(Math.random() * 8)
-      if (notchStep === rule.friendNotchStep) {
-        notchStep = (notchStep + 3) % 8
+
+      if (!nearMiss && Math.random() < 0.65) {
+        if (Math.random() < 0.5) {
+          mutateHue()
+        } else {
+          mutateDots()
+        }
       }
-      hue = rule.friendHue + (Math.random() < 0.5 ? -26 : 26)
     }
   }
 
   return {
-    id: `${roundNumber}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+    id: `${roundNumber}-${index}-${Math.random().toString(36).slice(2, 8)}`,
     isFriend,
     dotCount,
     notchStep,
@@ -152,14 +199,15 @@ function makeOrb(roundNumber: number, rule: Rule, isFriend: boolean, index: numb
 
 function buildRound(roundNumber: number) {
   const rule = getRule(roundNumber)
+  const objectsPerRound = getObjectsPerRound(roundNumber)
   const friendSlots = new Set<number>()
 
   while (friendSlots.size < FRIENDS_PER_ROUND) {
-    friendSlots.add(Math.floor(Math.random() * OBJECTS_PER_ROUND))
+    friendSlots.add(Math.floor(Math.random() * objectsPerRound))
   }
 
   const objects: Orb[] = []
-  for (let i = 0; i < OBJECTS_PER_ROUND; i += 1) {
+  for (let i = 0; i < objectsPerRound; i += 1) {
     objects.push(makeOrb(roundNumber, rule, friendSlots.has(i), i))
   }
 
@@ -257,7 +305,7 @@ function FalseFriendGame() {
             setRoundsCleared(nextRound)
             showRuleThenStart(nextRound + 1)
           },
-          (OBJECTS_PER_ROUND - 1) * spawnGap + ON_SCREEN_MS + 30,
+          (objects.length - 1) * spawnGap + ON_SCREEN_MS + 30,
         )
 
         timersRef.current.push(endTimer)
@@ -333,8 +381,6 @@ function FalseFriendGame() {
     return Math.round(reactionTotal / friendsClicked)
   }, [friendsClicked, reactionTotal])
 
-  const previewFalse = makeFalsePreview(currentRule, roundNumber)
-
   return (
     <div className="false-friend">
       {(phase === 'playing' || phase === 'ruleCard') && (
@@ -409,18 +455,12 @@ function FalseFriendGame() {
             <p>{currentRule.sentence}</p>
             <p className="overlay__example">{currentRule.example}</p>
             <div className="rule-preview">
-              <div>
-                <span>Friend</span>
-                <OrbitGlyph
-                  dotCount={currentRule.friendDotCount}
-                  notchStep={currentRule.friendNotchStep}
-                  hue={currentRule.friendHue}
-                />
-              </div>
-              <div>
-                <span>False Friend</span>
-                <OrbitGlyph dotCount={previewFalse.dotCount} notchStep={previewFalse.notchStep} hue={previewFalse.hue} />
-              </div>
+              <span>Friend to click</span>
+              <OrbitGlyph
+                dotCount={currentRule.friendDotCount}
+                notchStep={currentRule.friendNotchStep}
+                hue={currentRule.friendHue}
+              />
             </div>
           </section>
         )}
