@@ -602,6 +602,15 @@ function FalseFriendGame() {
     playTone(audioContext, { frequency: 220, start: now, duration: 0.13, gain: 0.14, type: 'square' })
   }
 
+  const playLevelCompleteSound = () => {
+    const audioContext = getAudioContext()
+    if (!audioContext) return
+    const now = audioContext.currentTime
+    playTone(audioContext, { frequency: 523.25, start: now, duration: 0.09, gain: 0.1, type: 'sine' })
+    playTone(audioContext, { frequency: 659.25, start: now + 0.08, duration: 0.1, gain: 0.11, type: 'sine' })
+    playTone(audioContext, { frequency: 783.99, start: now + 0.17, duration: 0.16, gain: 0.12, type: 'triangle' })
+  }
+
   const triggerDeath = useCallback(() => {
     clearAllTimers()
     setActiveObjects([])
@@ -659,6 +668,7 @@ function FalseFriendGame() {
               return
             }
 
+            playLevelCompleteSound()
             setScore((prev) => prev + Math.floor(ROUND_BONUS_BASE * nextRound ** 1.2))
             setRoundsCleared(nextRound)
             showRuleThenStart(nextRound + 1)
