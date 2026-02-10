@@ -2,14 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './FalseFriendGame.css'
 
 type Phase = 'start' | 'countdown' | 'ruleCard' | 'playing' | 'dead'
-type ShapeType = 'circle' | 'square' | 'diamond'
+type Attribute = 'shape' | 'color' | 'dots' | 'notch'
+type ShapeType = 'circle' | 'square' | 'diamond' | 'triangle' | 'pentagon' | 'hexagon'
 
 type Orb = {
   id: string
   isFriend: boolean
   shape: ShapeType
   dotCount: number
-  notchStep: number
+  notchAngle: number
   hue: number
   size: number
   x: number
@@ -17,241 +18,321 @@ type Orb = {
   spawnedAt: number
 }
 
-type LevelRule = {
+type LevelConfig = {
+  tier: 1 | 2
+  attributes: [Attribute] | [Attribute, Attribute]
+  paletteSize: number
+  shapeCount: number
+  maxDots: number
+  notchPositions: number
+  spawnDelayMs: number
+  friendCount: 4
+  objectCount: 20
+  objectVisibleMs: 2000
+}
+
+type Rule = {
   levelNumber: number
   title: string
   sentence: string
   example: string
-  requiredTraits: {
-    shape: boolean
-    color: boolean
-    notch: boolean
-    dot: boolean
-  }
+  config: LevelConfig
   friend: {
     shape: ShapeType
     hue: number
-    notchStep: number
     dotCount: number
+    notchAngle: number
   }
 }
 
-const OBJECTS_PER_ROUND = 20
-const FRIENDS_PER_ROUND = 4
-const ON_SCREEN_MS = 2000
 const RULE_CARD_MS = 3000
 const FALSE_EXPIRE_POINTS = 10
-
-const SHAPES: ShapeType[] = ['circle', 'square', 'diamond']
-const HUES = [22, 48, 88, 142, 195, 232, 285, 334]
+const ROUND_BONUS_BASE = 500
+const ATTR_CYCLE: Attribute[] = ['shape', 'color', 'dots', 'notch']
+const SHAPES: ShapeType[] = ['circle', 'square', 'diamond', 'triangle', 'pentagon', 'hexagon']
+const FULL_PALETTE = Array.from({ length: 24 }, (_, i) => Math.round((360 / 24) * i))
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function getLevelNumber(roundNumber: number) {
-  return ((roundNumber - 1) % 6) + 1
+function getShapeCount(index: number) {
+  return Math.min(6, index + 1)
 }
 
-function getSpeedMultiplier(roundNumber: number) {
-  return roundNumber >= 7 ? 2 : 1
+function getPaletteSize(index: number) {
+  return Math.min(21, 3 + (index - 1) * 2)
 }
 
-function getSpawnGap(roundNumber: number) {
-  const level = getLevelNumber(roundNumber)
-  const speedMultiplier = getSpeedMultiplier(roundNumber)
-  const baseGap = 820 - (level - 1) * 55
-  return Math.max(180, Math.floor(baseGap / speedMultiplier))
+function getMaxDots(index: number) {
+  return Math.min(8, 2 + index)
 }
 
-function getNearMissWeight(roundNumber: number) {
-  return clamp(0.38 + (roundNumber - 1) * 0.06, 0.38, 0.95)
+function getNotchPositions(index: number) {
+  if (index <= 1) return 2
+  if (index === 2) return 4
+  if (index === 3) return 6
+  return 8
 }
 
-function buildRule(roundNumber: number): LevelRule {
-  const levelNumber = getLevelNumber(roundNumber)
-  const shape = SHAPES[(roundNumber - 1) % SHAPES.length]
-  const hue = HUES[(roundNumber - 1) % HUES.length]
-  const notchStep = ((roundNumber - 1) * 2) % 8
-  const dotCount = ((roundNumber + 1) % 4) + 1
-
-  if (levelNumber === 1) {
-    return {
-      levelNumber,
-      title: 'Level 1 · Shape Only',
-      sentence: `Click only the ${shape} shape. Ignore color, notch, and dots.`,
-      example: `Friend = ${shape}. Wrong shape = instant death.`,
-      requiredTraits: { shape: true, color: false, notch: false, dot: false },
-      friend: { shape, hue, notchStep, dotCount },
-    }
+function getTier(levelNumber: number): 1 | 2 {
+  if (levelNumber <= 8) {
+    return 1
   }
 
-  if (levelNumber === 2) {
-    return {
-      levelNumber,
-      title: 'Level 2 · Shape + Color',
-      sentence: `Click only ${shape} with the target color.`,
-      example: 'Both shape and color must match.',
-      requiredTraits: { shape: true, color: true, notch: false, dot: false },
-      friend: { shape, hue, notchStep, dotCount },
-    }
+  const frequency = levelNumber >= 17 ? 3 : 4
+  return levelNumber % frequency === 0 ? 2 : 1
+}
+
+function getPrimaryAttribute(levelNumber: number) {
+  return ATTR_CYCLE[(levelNumber - 1) % ATTR_CYCLE.length]
+}
+
+function getTierTwoAttributes(levelNumber: number, primary: Attribute): [Attribute, Attribute] {
+  const candidates = ATTR_CYCLE.filter((item) => item !== primary)
+  const partner = candidates[Math.floor(levelNumber / 2) % candidates.length]
+  return [primary, partner]
+}
+
+function getAttributesForLevel(levelNumber: number): [Attribute] | [Attribute, Attribute] {
+  const primary = getPrimaryAttribute(levelNumber)
+  if (getTier(levelNumber) === 1) {
+    return [primary]
   }
 
-  if (levelNumber === 3) {
-    return {
-      levelNumber,
-      title: 'Level 3 · Shape + Notch',
-      sentence: `Click only ${shape} with the target notch location.`,
-      example: 'Shape and notch must match.',
-      requiredTraits: { shape: true, color: false, notch: true, dot: false },
-      friend: { shape, hue, notchStep, dotCount },
-    }
+  return getTierTwoAttributes(levelNumber, primary)
+}
+
+function getAttributeUsageCounts(levelNumber: number) {
+  const counts: Record<Attribute, number> = {
+    shape: 0,
+    color: 0,
+    dots: 0,
+    notch: 0,
   }
 
-  if (levelNumber === 4) {
-    return {
-      levelNumber,
-      title: 'Level 4 · Shape + Color + Notch',
-      sentence: `Click only ${shape} with the correct color and notch.`,
-      example: 'Three-trait matching starts here.',
-      requiredTraits: { shape: true, color: true, notch: true, dot: false },
-      friend: { shape, hue, notchStep, dotCount },
-    }
+  for (let level = 1; level <= levelNumber; level += 1) {
+    const attrs = getAttributesForLevel(level)
+    attrs.forEach((attr) => {
+      counts[attr] += 1
+    })
   }
 
-  if (levelNumber === 5) {
-    return {
-      levelNumber,
-      title: 'Level 5 · Shape + Notch + Dot',
-      sentence: `Click only ${shape} with correct notch and ${dotCount} dots.`,
-      example: 'Color can lie. Trust shape + notch + dots.',
-      requiredTraits: { shape: true, color: false, notch: true, dot: true },
-      friend: { shape, hue, notchStep, dotCount },
-    }
+  return counts
+}
+
+export function getLevelConfig(levelNumber: number): LevelConfig {
+  const attributes = getAttributesForLevel(levelNumber)
+  const tier = getTier(levelNumber)
+  const usage = getAttributeUsageCounts(levelNumber)
+
+  let shapeCount = getShapeCount(usage.shape)
+  let paletteSize = getPaletteSize(usage.color)
+  let maxDots = getMaxDots(usage.dots)
+  let notchPositions = getNotchPositions(usage.notch)
+
+  if (tier === 2 && attributes.includes('shape') && attributes.includes('color')) {
+    shapeCount = Math.max(2, Math.floor(shapeCount * 0.7))
+    paletteSize = Math.max(3, Math.floor(paletteSize * 0.7))
   }
+
+  if (tier === 2 && attributes.includes('notch') && levelNumber < 18) {
+    notchPositions = Math.min(notchPositions, 6)
+  }
+
+  let spawnDelayMs = 650
+  if (levelNumber >= 12) {
+    spawnDelayMs = Math.max(250, 650 - (levelNumber - 12) * 15)
+  }
+
+  const capInfo: Record<Attribute, { value: number; cap: number; capReachedAt: number }> = {
+    shape: { value: shapeCount, cap: 6, capReachedAt: 5 },
+    color: { value: paletteSize, cap: 21, capReachedAt: 10 },
+    dots: { value: maxDots, cap: 8, capReachedAt: 6 },
+    notch: { value: notchPositions, cap: 8, capReachedAt: 4 },
+  }
+
+  let cappedPenalty = 0
+  attributes.forEach((attr) => {
+    const info = capInfo[attr]
+    if (info.value >= info.cap) {
+      const repeatsAtCap = Math.max(1, usage[attr] - info.capReachedAt + 1)
+      cappedPenalty += repeatsAtCap * 20
+    }
+  })
+
+  spawnDelayMs = Math.max(250, spawnDelayMs - cappedPenalty)
 
   return {
-    levelNumber,
-    title: 'Level 6 · Shape + Color + Notch + Dot',
-    sentence: `Click only ${shape} that matches all four traits.`,
-    example: 'Everything must match to be a friend.',
-    requiredTraits: { shape: true, color: true, notch: true, dot: true },
-    friend: { shape, hue, notchStep, dotCount },
+    tier,
+    attributes,
+    paletteSize,
+    shapeCount,
+    maxDots,
+    notchPositions,
+    spawnDelayMs,
+    friendCount: 4,
+    objectCount: 20,
+    objectVisibleMs: 2000,
   }
 }
 
-function getRandomShape(exclude?: ShapeType) {
-  const choices = exclude ? SHAPES.filter((shape) => shape !== exclude) : SHAPES
-  return choices[Math.floor(Math.random() * choices.length)]
+function pickFrom<T>(items: T[], seed: number) {
+  return items[seed % items.length]
 }
 
-function getRandomHue(exclude?: number) {
-  const delta = Math.random() < 0.5 ? -1 : 1
-  let next = HUES[Math.floor(Math.random() * HUES.length)]
-  if (exclude !== undefined && Math.abs(next - exclude) < 8) {
-    next = exclude + delta * 24
+function getNotchAngle(index: number, notchPositions: number) {
+  return (360 / notchPositions) * index
+}
+
+function buildRule(levelNumber: number): Rule {
+  const config = getLevelConfig(levelNumber)
+  const shapeChoices = SHAPES.slice(0, config.shapeCount)
+  const colorChoices = FULL_PALETTE.slice(0, config.paletteSize)
+  const dotChoices = Array.from({ length: config.maxDots }, (_, i) => i + 1)
+
+  const primaryLabel = config.attributes.join(' + ')
+  const friend = {
+    shape: pickFrom(shapeChoices, levelNumber * 3),
+    hue: pickFrom(colorChoices, levelNumber * 5),
+    dotCount: pickFrom(dotChoices, levelNumber * 7),
+    notchAngle: getNotchAngle(levelNumber % config.notchPositions, config.notchPositions),
   }
-  return next
+
+  const title = `Level ${levelNumber} · Tier ${config.tier} · ${primaryLabel}`
+  const sentence = `Click objects matching: ${config.attributes.join(' AND ')}.`
+  const example = `Choice space: ${config.shapeCount} shapes, ${config.paletteSize} colors, 1..${config.maxDots} dots, ${config.notchPositions} notch positions.`
+
+  return { levelNumber, title, sentence, example, config, friend }
 }
 
-function getRandomDotCount(exclude?: number) {
-  let next = Math.floor(Math.random() * 5)
-  if (exclude !== undefined && next === exclude) {
-    next = (next + 2) % 5
+function nearHue(base: number, palette: number[]) {
+  const step = palette.length > 0 ? 360 / palette.length : 20
+  return base + (Math.random() < 0.5 ? -step : step)
+}
+
+function randomNotchAngle(notchPositions: number, exclude?: number) {
+  let angle = getNotchAngle(Math.floor(Math.random() * notchPositions), notchPositions)
+  if (exclude !== undefined && angle === exclude) {
+    angle = getNotchAngle((Math.floor(Math.random() * notchPositions) + 1) % notchPositions, notchPositions)
   }
-  return next
+  return angle
 }
 
-function getRandomNotch(exclude?: number) {
-  let next = Math.floor(Math.random() * 8)
-  if (exclude !== undefined && next === exclude) {
-    next = (next + 3) % 8
+function matchesRule(orb: Omit<Orb, 'id' | 'isFriend' | 'size' | 'x' | 'y' | 'spawnedAt'>, rule: Rule) {
+  return rule.config.attributes.every((attr) => {
+    if (attr === 'shape') return orb.shape === rule.friend.shape
+    if (attr === 'color') return orb.hue === rule.friend.hue
+    if (attr === 'dots') return orb.dotCount === rule.friend.dotCount
+    return orb.notchAngle === rule.friend.notchAngle
+  })
+}
+
+function makeFalseOrb(rule: Rule) {
+  const shapes = SHAPES.slice(0, rule.config.shapeCount)
+  const palette = FULL_PALETTE.slice(0, rule.config.paletteSize)
+
+  const draft = {
+    shape: pickFrom(shapes, Math.floor(Math.random() * 1000)),
+    hue: pickFrom(palette, Math.floor(Math.random() * 1000)),
+    dotCount: Math.floor(Math.random() * rule.config.maxDots) + 1,
+    notchAngle: randomNotchAngle(rule.config.notchPositions),
   }
-  return next
-}
 
-function makeOrb(roundNumber: number, rule: LevelRule, isFriend: boolean, index: number): Orb {
-  const nearMissWeight = getNearMissWeight(roundNumber)
-  const speedMultiplier = getSpeedMultiplier(roundNumber)
-  const baseSize = clamp(86 - (speedMultiplier - 1) * 8 - (rule.levelNumber - 1) * 2, 48, 90)
-  const size = baseSize + (Math.random() - 0.5) * 8
+  const attrs = rule.config.attributes
 
-  let shape = rule.friend.shape
-  let hue = rule.friend.hue
-  let notchStep = rule.friend.notchStep
-  let dotCount = rule.friend.dotCount
+  const applyNearMiss = (matchFirstOnly: boolean) => {
+    const first = attrs[0]
+    const second = attrs[1]!
 
-  if (!isFriend) {
-    const nearMiss = Math.random() < nearMissWeight
-
-    const mutableTraits = [
-      rule.requiredTraits.shape ? 'shape' : null,
-      rule.requiredTraits.color ? 'color' : null,
-      rule.requiredTraits.notch ? 'notch' : null,
-      rule.requiredTraits.dot ? 'dot' : null,
-    ].filter(Boolean) as Array<'shape' | 'color' | 'notch' | 'dot'>
-
-    const mustMutate = mutableTraits[Math.floor(Math.random() * mutableTraits.length)]
-
-    const mutate = (trait: 'shape' | 'color' | 'notch' | 'dot') => {
-      if (trait === 'shape') shape = getRandomShape(rule.friend.shape)
-      if (trait === 'color') hue = nearMiss ? rule.friend.hue + (Math.random() < 0.5 ? -10 : 10) : getRandomHue(rule.friend.hue)
-      if (trait === 'notch') notchStep = nearMiss ? (rule.friend.notchStep + (Math.random() < 0.5 ? -1 : 1) + 8) % 8 : getRandomNotch(rule.friend.notchStep)
-      if (trait === 'dot') dotCount = nearMiss ? clamp(rule.friend.dotCount + (Math.random() < 0.5 ? -1 : 1), 0, 4) : getRandomDotCount(rule.friend.dotCount)
-    }
-
-    mutate(mustMutate)
-
-    if (!nearMiss && Math.random() < 0.45) {
-      const secondary = mutableTraits.filter((trait) => trait !== mustMutate)
-      if (secondary.length > 0) {
-        mutate(secondary[Math.floor(Math.random() * secondary.length)])
+    const mutate = (attr: Attribute, match: boolean) => {
+      if (attr === 'shape') {
+        draft.shape = match ? rule.friend.shape : SHAPES.slice(0, rule.config.shapeCount).find((s) => s !== rule.friend.shape) ?? rule.friend.shape
+      } else if (attr === 'color') {
+        draft.hue = match ? rule.friend.hue : nearHue(rule.friend.hue, palette)
+      } else if (attr === 'dots') {
+        draft.dotCount = match ? rule.friend.dotCount : ((rule.friend.dotCount % rule.config.maxDots) + 1)
+      } else {
+        draft.notchAngle = match ? rule.friend.notchAngle : randomNotchAngle(rule.config.notchPositions, rule.friend.notchAngle)
       }
     }
 
-    if (!rule.requiredTraits.color && Math.random() < 0.65) {
-      hue = getRandomHue()
+    mutate(first, matchFirstOnly)
+    mutate(second, !matchFirstOnly)
+  }
+
+  if (rule.config.tier === 2) {
+    const roll = Math.random()
+    if (roll < 0.4) {
+      applyNearMiss(true)
+    } else if (roll < 0.8) {
+      applyNearMiss(false)
+    } else {
+      rule.config.attributes.forEach((attr) => {
+        if (attr === 'shape') {
+          draft.shape = SHAPES.slice(0, rule.config.shapeCount).find((s) => s !== rule.friend.shape) ?? draft.shape
+        } else if (attr === 'color') {
+          draft.hue = nearHue(rule.friend.hue, palette)
+        } else if (attr === 'dots') {
+          draft.dotCount = ((rule.friend.dotCount + 1) % rule.config.maxDots) + 1
+        } else {
+          draft.notchAngle = randomNotchAngle(rule.config.notchPositions, rule.friend.notchAngle)
+        }
+      })
     }
-    if (!rule.requiredTraits.dot && Math.random() < 0.65) {
-      dotCount = getRandomDotCount()
-    }
-    if (!rule.requiredTraits.notch && Math.random() < 0.65) {
-      notchStep = getRandomNotch()
+  } else {
+    const attr = rule.config.attributes[0]
+    if (attr === 'shape') {
+      draft.shape = SHAPES.slice(0, rule.config.shapeCount).find((s) => s !== rule.friend.shape) ?? draft.shape
+    } else if (attr === 'color') {
+      draft.hue = nearHue(rule.friend.hue, palette)
+    } else if (attr === 'dots') {
+      draft.dotCount = ((rule.friend.dotCount + 1) % rule.config.maxDots) + 1
+    } else {
+      draft.notchAngle = randomNotchAngle(rule.config.notchPositions, rule.friend.notchAngle)
     }
   }
 
-  return {
-    id: `${roundNumber}-${index}-${Math.random().toString(36).slice(2, 8)}`,
-    isFriend,
-    shape,
-    hue,
-    notchStep,
-    dotCount,
-    size,
-    x: Math.random() * 86 + 3,
-    y: Math.random() * 70 + 8,
-    spawnedAt: 0,
+  if (matchesRule(draft, rule)) {
+    draft.notchAngle = randomNotchAngle(rule.config.notchPositions, rule.friend.notchAngle)
   }
+
+  return draft
 }
 
-function buildRound(roundNumber: number) {
-  const rule = buildRule(roundNumber)
+function buildRound(levelNumber: number) {
+  const rule = buildRule(levelNumber)
   const friendSlots = new Set<number>()
 
-  while (friendSlots.size < FRIENDS_PER_ROUND) {
-    friendSlots.add(Math.floor(Math.random() * OBJECTS_PER_ROUND))
+  while (friendSlots.size < rule.config.friendCount) {
+    friendSlots.add(Math.floor(Math.random() * rule.config.objectCount))
   }
 
+  const baseSize = clamp(88 - levelNumber * 1.3, 52, 90)
   const objects: Orb[] = []
-  for (let i = 0; i < OBJECTS_PER_ROUND; i += 1) {
-    objects.push(makeOrb(roundNumber, rule, friendSlots.has(i), i))
+
+  for (let i = 0; i < rule.config.objectCount; i += 1) {
+    const isFriend = friendSlots.has(i)
+    const core = isFriend ? rule.friend : makeFalseOrb(rule)
+
+    objects.push({
+      id: `${levelNumber}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+      isFriend,
+      shape: core.shape,
+      hue: core.hue,
+      dotCount: core.dotCount,
+      notchAngle: core.notchAngle,
+      size: baseSize + (Math.random() - 0.5) * 8,
+      x: Math.random() * 86 + 3,
+      y: Math.random() * 70 + 8,
+      spawnedAt: 0,
+    })
   }
 
   return { rule, objects }
 }
 
-function OrbitGlyph({ shape, dotCount, notchStep, hue }: { shape: ShapeType; dotCount: number; notchStep: number; hue: number }) {
-  const notchAngle = notchStep * 45
+function OrbitGlyph({ shape, dotCount, notchAngle, hue }: { shape: ShapeType; dotCount: number; notchAngle: number; hue: number }) {
   const notchRadians = (notchAngle * Math.PI) / 180
   const radius = 34
   const notchDistance = radius - 4
@@ -281,7 +362,7 @@ function FalseFriendGame() {
   const [roundNumber, setRoundNumber] = useState(1)
   const [score, setScore] = useState(0)
   const [activeObjects, setActiveObjects] = useState<Orb[]>([])
-  const [currentRule, setCurrentRule] = useState<LevelRule>(buildRule(1))
+  const [currentRule, setCurrentRule] = useState<Rule>(buildRule(1))
   const [friendsClicked, setFriendsClicked] = useState(0)
   const [reactionTotal, setReactionTotal] = useState(0)
   const [roundsCleared, setRoundsCleared] = useState(0)
@@ -297,9 +378,7 @@ function FalseFriendGame() {
     expiryTimersRef.current.clear()
   }, [])
 
-  useEffect(() => {
-    return () => clearAllTimers()
-  }, [clearAllTimers])
+  useEffect(() => () => clearAllTimers(), [clearAllTimers])
 
   const showRuleThenStart = useCallback(
     (nextRound: number) => {
@@ -313,8 +392,6 @@ function FalseFriendGame() {
         setCurrentRule(rule)
         setPhase('playing')
 
-        const spawnGap = getSpawnGap(nextRound)
-
         objects.forEach((object, index) => {
           const timer = window.setTimeout(() => {
             const spawnedAt = performance.now()
@@ -327,21 +404,21 @@ function FalseFriendGame() {
                 setScore((prev) => prev + FALSE_EXPIRE_POINTS)
               }
               expiryTimersRef.current.delete(spawnedObject.id)
-            }, ON_SCREEN_MS)
+            }, rule.config.objectVisibleMs)
 
             expiryTimersRef.current.set(spawnedObject.id, expiryTimer)
-          }, index * spawnGap)
+          }, index * rule.config.spawnDelayMs)
 
           timersRef.current.push(timer)
         })
 
         const endTimer = window.setTimeout(
           () => {
-            setScore((prev) => prev + Math.floor(500 * nextRound ** 1.2))
+            setScore((prev) => prev + Math.floor(ROUND_BONUS_BASE * nextRound ** 1.2))
             setRoundsCleared(nextRound)
             showRuleThenStart(nextRound + 1)
           },
-          (objects.length - 1) * spawnGap + ON_SCREEN_MS + 30,
+          (objects.length - 1) * rule.config.spawnDelayMs + rule.config.objectVisibleMs + 30,
         )
 
         timersRef.current.push(endTimer)
@@ -378,7 +455,7 @@ function FalseFriendGame() {
     }
 
     const reactionMs = Math.max(0, Math.floor(performance.now() - orb.spawnedAt))
-    const clickPoints = Math.max(0, ON_SCREEN_MS - reactionMs)
+    const clickPoints = Math.max(0, 2000 - reactionMs)
     setScore((prev) => prev + clickPoints)
     setFriendsClicked((prev) => prev + 1)
     setReactionTotal((prev) => prev + reactionMs)
@@ -422,7 +499,7 @@ function FalseFriendGame() {
       {(phase === 'playing' || phase === 'ruleCard') && (
         <header className="false-friend__hud">
           <span>
-            Round {roundNumber} · L{currentRule.levelNumber} · {getSpeedMultiplier(roundNumber)}x speed
+            Round {roundNumber} · Tier {currentRule.config.tier} · {currentRule.config.attributes.join(' + ')}
           </span>
           <span>Score {score.toLocaleString()}</span>
         </header>
@@ -430,8 +507,7 @@ function FalseFriendGame() {
 
       <main className="false-friend__arena">
         {activeObjects.map((orb) => {
-          const notchAngle = orb.notchStep * 45
-          const notchRadians = (notchAngle * Math.PI) / 180
+          const notchRadians = (orb.notchAngle * Math.PI) / 180
           const radius = orb.size / 2
           const notchDistance = radius - 4
 
@@ -497,7 +573,7 @@ function FalseFriendGame() {
               <OrbitGlyph
                 shape={currentRule.friend.shape}
                 dotCount={currentRule.friend.dotCount}
-                notchStep={currentRule.friend.notchStep}
+                notchAngle={currentRule.friend.notchAngle}
                 hue={currentRule.friend.hue}
               />
             </div>

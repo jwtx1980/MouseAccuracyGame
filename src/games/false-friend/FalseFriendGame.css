@@ -54,6 +54,22 @@
   border-radius: 0;
   clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
 }
+
+.orb--triangle {
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+}
+
+.orb--pentagon {
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 96% 35%, 79% 100%, 21% 100%, 4% 35%);
+}
+
+.orb--hexagon {
+  border-radius: 0;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
+
 .orb--preview {
   position: relative;
   width: 76px;
