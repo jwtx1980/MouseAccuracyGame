@@ -351,7 +351,7 @@ function App() {
     setTotalClicks((prev) => prev + 1)
   }
 
-  const handleTargetClick = (targetId: string, createdAt: number) => {
+  const handleTargetClick = (targetId: string) => {
     const hitTarget = targets.find((target) => target.id === targetId)
     setTargets((current) => current.filter((target) => target.id !== targetId))
     setHits((prev) => prev + 1)
@@ -483,7 +483,7 @@ function App() {
               }}
               onClick={(event) => {
                 event.stopPropagation()
-                handleTargetClick(target.id, target.createdAt)
+                  handleTargetClick(target.id)
               }}
               aria-label="Hit target"
             />
