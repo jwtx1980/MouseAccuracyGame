@@ -93,7 +93,24 @@ function getNotchAngle(index: number, notchPositions: number) {
   if (notchPositions <= 0) {
     return 0
   }
-  return (360 / notchPositions) * index
+
+  // Keep notch-bearing rounds visually explicit by avoiding an angle of 0,
+  // which was previously rendered as if there was no notch.
+  return (360 / notchPositions) * (index + 1)
+}
+
+function getOrbColor(hue: number) {
+  const normalizedHue = ((hue % 360) + 360) % 360
+
+  if (normalizedHue >= 45 && normalizedHue <= 75) {
+    return `hsl(${hue} 94% 64%)`
+  }
+
+  if (normalizedHue >= 95 && normalizedHue <= 150) {
+    return `hsl(${hue} 82% 48%)`
+  }
+
+  return `hsl(${hue} 86% 58%)`
 }
 
 function getMinimumHits(levelNumber: number) {
@@ -215,9 +232,9 @@ export function getLevelConfig(levelNumber: number): LevelConfig {
       tier: 2,
       attributes: ['shape', 'color', 'dots', 'notch'],
       shapeCount: 5,
-      paletteSize: 7,
+      paletteSize: 6,
       maxDots: 5,
-      notchPositions: 4,
+      notchPositions: 2,
       spawnDelayMs: speedRamp[0],
       friendCount: 4,
       objectCount: 20,
@@ -290,8 +307,14 @@ function getColorChoices(levelNumber: number, paletteSize: number) {
     return [210]
   }
 
-  if (levelNumber < 12) {
+  if (levelNumber < 8) {
     return FULL_PALETTE.slice(0, paletteSize)
+  }
+
+  if (levelNumber < 12) {
+    const startIndex = (levelNumber * 3) % FULL_PALETTE.length
+    const spreadStep = 2
+    return Array.from({ length: paletteSize }, (_, idx) => FULL_PALETTE[(startIndex + idx * spreadStep) % FULL_PALETTE.length])
   }
 
   const center = (200 + levelNumber * 9) % 360
@@ -466,7 +489,7 @@ function OrbitGlyph({ shape, dotCount, notchAngle, hue }: { shape: ShapeType; do
   const previewSize = 76
 
   return (
-    <span className={`orb orb--preview orb--${shape}`} style={{ background: `hsl(${hue} 86% 58%)` }}>
+    <span className={`orb orb--preview orb--${shape}`} style={{ background: getOrbColor(hue) }}>
       {dotCount > 0 && (
         <span className="orb__dots">
           {Array.from({ length: dotCount }).map((_, dotIndex) => (
@@ -836,7 +859,7 @@ function FalseFriendGame() {
                 height: orb.size,
                 left: `${orb.x}%`,
                 top: `${orb.y}%`,
-                background: `hsl(${orb.hue} 86% 58%)`,
+                background: getOrbColor(orb.hue),
                 transform: 'translate(-50%, -50%)',
               }}
               onClick={() => handleObjectClick(orb)}
