@@ -242,6 +242,7 @@ function App() {
   }, [activeScoreKey, supabase])
 
   const handleStartGame = () => {
+    stopAllLoops()
     resetGameState()
     setScreen('game')
     window.setTimeout(() => {
@@ -453,10 +454,10 @@ function App() {
         <div className="app__header-actions">
           <button
             type="button"
-            className={`ghost-button ${screen === 'start' ? 'is-active' : ''}`}
-            onClick={() => setScreen('start')}
+            className="ghost-button"
+            onClick={handleStartGame}
           >
-            Start
+            Start round
           </button>
           <button
             type="button"
@@ -474,61 +475,69 @@ function App() {
             <div className="settings">
               <div className="settings__group">
                 <h2>Session length</h2>
-                <div className="settings__options">
-                  {DURATION_OPTIONS.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={`chip ${settings.duration === option ? 'is-selected' : ''}`}
-                      onClick={() =>
-                        setSettings((current) => ({ ...current, duration: option }))
-                      }
-                    >
-                      {option}s
-                    </button>
-                  ))}
-                </div>
+                <label className="settings__field">
+                  <span className="settings__label">Choose round time</span>
+                  <select
+                    className="settings__select"
+                    value={settings.duration}
+                    onChange={(event) =>
+                      setSettings((current) => ({
+                        ...current,
+                        duration: Number(event.target.value) as DurationOption,
+                      }))
+                    }
+                  >
+                    {DURATION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}s
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
               <div className="settings__group">
                 <h2>Target size</h2>
-                <div className="settings__options">
-                  {TARGET_SIZE_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={`chip ${settings.targetSizeId === preset.id ? 'is-selected' : ''}`}
-                      onClick={() =>
-                        setSettings((current) => ({ ...current, targetSizeId: preset.id }))
-                      }
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
+                <label className="settings__field">
+                  <span className="settings__label">Select target size</span>
+                  <select
+                    className="settings__select"
+                    value={settings.targetSizeId}
+                    onChange={(event) =>
+                      setSettings((current) => ({
+                        ...current,
+                        targetSizeId: event.target.value,
+                      }))
+                    }
+                  >
+                    {TARGET_SIZE_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
               <div className="settings__group">
                 <h2>Difficulty</h2>
-                <div className="settings__options settings__options--cards">
-                  {DIFFICULTY_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={`card-option ${
-                        settings.difficultyId === preset.id ? 'is-selected' : ''
-                      }`}
-                      onClick={() =>
-                        setSettings((current) => ({ ...current, difficultyId: preset.id }))
-                      }
-                    >
-                      <span className="card-option__title">{preset.label}</span>
-                      <span className="card-option__desc">{preset.description}</span>
-                      <span className="card-option__meta">
-                        {preset.spawnRateMs}ms spawn · max {preset.maxTargets} ·{' '}
-                        {preset.lifetimeMs}ms life
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                <label className="settings__field">
+                  <span className="settings__label">Pick a difficulty</span>
+                  <select
+                    className="settings__select"
+                    value={settings.difficultyId}
+                    onChange={(event) =>
+                      setSettings((current) => ({
+                        ...current,
+                        difficultyId: event.target.value,
+                      }))
+                    }
+                  >
+                    {DIFFICULTY_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label} — {preset.description}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             </div>
             <div className="panel__actions">
