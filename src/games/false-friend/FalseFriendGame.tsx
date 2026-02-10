@@ -441,10 +441,21 @@ function buildRound(levelNumber: number) {
   return { rule, objects }
 }
 
-function OrbitGlyph({ shape, dotCount, notchAngle, hue }: { shape: ShapeType; dotCount: number; notchAngle: number; hue: number }) {
+function getNotchPositionStyle(notchAngle: number, size: number) {
   const notchRadians = (notchAngle * Math.PI) / 180
-  const radius = 34
-  const notchDistance = radius - 4
+  const radius = size / 2
+  const notchSize = size * 0.16
+  const notchDistance = radius - notchSize / 2 - 2
+
+  return {
+    left: `calc(50% + ${Math.cos(notchRadians) * notchDistance}px)`,
+    top: `calc(50% + ${Math.sin(notchRadians) * notchDistance}px)`,
+    transform: 'translate(-50%, -50%)',
+  }
+}
+
+function OrbitGlyph({ shape, dotCount, notchAngle, hue }: { shape: ShapeType; dotCount: number; notchAngle: number; hue: number }) {
+  const previewSize = 76
 
   return (
     <span className={`orb orb--preview orb--${shape}`} style={{ background: `hsl(${hue} 86% 58%)` }}>
@@ -456,14 +467,7 @@ function OrbitGlyph({ shape, dotCount, notchAngle, hue }: { shape: ShapeType; do
         </span>
       )}
       {notchAngle !== 0 && (
-        <span
-          className="orb__notch"
-          style={{
-            left: `calc(50% + ${Math.cos(notchRadians) * notchDistance}px)`,
-            top: `calc(50% + ${Math.sin(notchRadians) * notchDistance}px)`,
-            transform: 'translate(-50%, -50%)',
-          }}
-        />
+        <span className="orb__notch" style={getNotchPositionStyle(notchAngle, previewSize)} />
       )}
     </span>
   )
@@ -810,10 +814,6 @@ function FalseFriendGame() {
 
       <main className="false-friend__arena">
         {activeObjects.map((orb) => {
-          const notchRadians = (orb.notchAngle * Math.PI) / 180
-          const radius = orb.size / 2
-          const notchDistance = radius - 4
-
           return (
             <button
               key={orb.id}
@@ -831,14 +831,7 @@ function FalseFriendGame() {
               aria-label="false-friend-object"
             >
               {orb.notchAngle !== 0 && (
-                <span
-                  className="orb__notch"
-                  style={{
-                    left: `calc(50% + ${Math.cos(notchRadians) * notchDistance}px)`,
-                    top: `calc(50% + ${Math.sin(notchRadians) * notchDistance}px)`,
-                    transform: 'translate(-50%, -50%)',
-                  }}
-                />
+                <span className="orb__notch" style={getNotchPositionStyle(orb.notchAngle, orb.size)} />
               )}
               {orb.dotCount > 0 && (
                 <span className="orb__dots">
