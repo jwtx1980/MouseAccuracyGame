@@ -41,6 +41,19 @@
   padding: 0;
 }
 
+
+.orb--circle {
+  border-radius: 50%;
+}
+
+.orb--square {
+  border-radius: 14%;
+}
+
+.orb--diamond {
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
 .orb--preview {
   position: relative;
   width: 76px;
