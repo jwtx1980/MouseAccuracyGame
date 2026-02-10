@@ -229,9 +229,9 @@ export function getLevelConfig(levelNumber: number): LevelConfig {
       tier: 2,
       attributes: ['shape', 'color', 'dots', 'notch'],
       shapeCount: 5,
-      paletteSize: 7,
+      paletteSize: 6,
       maxDots: 5,
-      notchPositions: 4,
+      notchPositions: 2,
       spawnDelayMs: speedRamp[0],
       friendCount: 4,
       objectCount: 20,
@@ -304,8 +304,14 @@ function getColorChoices(levelNumber: number, paletteSize: number) {
     return [210]
   }
 
-  if (levelNumber < 12) {
+  if (levelNumber < 8) {
     return FULL_PALETTE.slice(0, paletteSize)
+  }
+
+  if (levelNumber < 12) {
+    const startIndex = (levelNumber * 3) % FULL_PALETTE.length
+    const spreadStep = 2
+    return Array.from({ length: paletteSize }, (_, idx) => FULL_PALETTE[(startIndex + idx * spreadStep) % FULL_PALETTE.length])
   }
 
   const center = (200 + levelNumber * 9) % 360
