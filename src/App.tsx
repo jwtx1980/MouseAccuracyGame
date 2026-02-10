@@ -131,7 +131,6 @@ function App() {
   const [hits, setHits] = useState(0)
   const [misses, setMisses] = useState(0)
   const [totalClicks, setTotalClicks] = useState(0)
-  const [reactionTimes, setReactionTimes] = useState<number[]>([])
   const [pendingName, setPendingName] = useState('')
   const [scores, setScores] = useState<Record<string, ScoreEntry[]>>({})
   const [scoresError, setScoresError] = useState<string | null>(null)
@@ -176,7 +175,6 @@ function App() {
     setHits(0)
     setMisses(0)
     setTotalClicks(0)
-    setReactionTimes([])
     setTimeLeft(settings.duration)
     setQualifiedForScore(false)
     setPendingName('')
@@ -358,7 +356,6 @@ function App() {
     setTargets((current) => current.filter((target) => target.id !== targetId))
     setHits((prev) => prev + 1)
     setTotalClicks((prev) => prev + 1)
-    setReactionTimes((prev) => [...prev, Date.now() - createdAt])
     if (hitTarget && targetSize) {
       triggerPopEffect(hitTarget.x, hitTarget.y, targetSize.size)
     }
