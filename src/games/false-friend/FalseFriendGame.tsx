@@ -96,6 +96,20 @@ function getNotchAngle(index: number, notchPositions: number) {
   return (360 / notchPositions) * index
 }
 
+function getOrbColor(hue: number) {
+  const normalizedHue = ((hue % 360) + 360) % 360
+
+  if (normalizedHue >= 45 && normalizedHue <= 75) {
+    return `hsl(${hue} 94% 64%)`
+  }
+
+  if (normalizedHue >= 95 && normalizedHue <= 150) {
+    return `hsl(${hue} 82% 48%)`
+  }
+
+  return `hsl(${hue} 86% 58%)`
+}
+
 function getMinimumHits(levelNumber: number) {
   if (levelNumber <= 3) return 1
   if (levelNumber <= 6) return 2
@@ -466,7 +480,7 @@ function OrbitGlyph({ shape, dotCount, notchAngle, hue }: { shape: ShapeType; do
   const previewSize = 76
 
   return (
-    <span className={`orb orb--preview orb--${shape}`} style={{ background: `hsl(${hue} 86% 58%)` }}>
+    <span className={`orb orb--preview orb--${shape}`} style={{ background: getOrbColor(hue) }}>
       {dotCount > 0 && (
         <span className="orb__dots">
           {Array.from({ length: dotCount }).map((_, dotIndex) => (
@@ -836,7 +850,7 @@ function FalseFriendGame() {
                 height: orb.size,
                 left: `${orb.x}%`,
                 top: `${orb.y}%`,
-                background: `hsl(${orb.hue} 86% 58%)`,
+                background: getOrbColor(orb.hue),
                 transform: 'translate(-50%, -50%)',
               }}
               onClick={() => handleObjectClick(orb)}
