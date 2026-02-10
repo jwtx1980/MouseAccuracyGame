@@ -93,7 +93,10 @@ function getNotchAngle(index: number, notchPositions: number) {
   if (notchPositions <= 0) {
     return 0
   }
-  return (360 / notchPositions) * index
+
+  // Keep notch-bearing rounds visually explicit by avoiding an angle of 0,
+  // which was previously rendered as if there was no notch.
+  return (360 / notchPositions) * (index + 1)
 }
 
 function getOrbColor(hue: number) {
