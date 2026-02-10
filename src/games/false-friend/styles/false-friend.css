@@ -1,11 +1,215 @@
-﻿/* False Friend scaffold styles (isolated) */
-.ff-root{ min-height:100vh; display:flex; align-items:center; justify-content:center;
-  background: radial-gradient(circle at 40% 30%, #151515, #000);
-  color:#f2f2f2; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-.ff-hero{ width:min(720px, 92vw); padding:32px; border:1px solid rgba(255,255,255,0.12);
-  border-radius:16px; background: rgba(0,0,0,0.55); box-shadow:0 20px 60px rgba(0,0,0,0.6); text-align:center; }
-.ff-title{ margin:0 0 8px 0; font-size:48px; letter-spacing:0.5px; }
-.ff-subtitle{ margin:0 0 22px 0; opacity:0.85; }
-.ff-start{ font-size:20px; padding:14px 26px; border-radius:14px; border:1px solid rgba(255,255,255,0.22);
-  background: rgba(255,255,255,0.10); color:inherit; cursor:pointer; }
-.ff-start:hover{ background: rgba(255,255,255,0.16); }
+.ff-root {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 30% 30%, #17172b, #060608 70%);
+  color: #f6f6ff;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+.ff-hud {
+  position: fixed;
+  inset: 18px 18px auto;
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.ff-playfield {
+  position: fixed;
+  inset: 0;
+}
+
+.ff-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 14px;
+  background: rgba(6, 6, 10, 0.45);
+}
+
+.ff-overlay--solid {
+  background: rgba(5, 5, 8, 0.88);
+}
+
+.ff-overlay--card {
+  background: rgba(7, 7, 12, 0.82);
+}
+
+.ff-count {
+  font-size: clamp(4rem, 10vw, 8rem);
+  font-weight: 800;
+}
+
+.ff-cta {
+  margin: 0 auto;
+  font-size: 1.5rem;
+  border: 0;
+  border-radius: 14px;
+  padding: 14px 36px;
+  cursor: pointer;
+  background: linear-gradient(120deg, #86f4fd, #9f8cff);
+  color: #101016;
+  font-weight: 700;
+}
+
+.ff-object {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ff-token {
+  --size: 66px;
+  width: var(--size);
+  height: var(--size);
+  display: inline-block;
+  border: 3px solid transparent;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.ff-token--circle {
+  border-radius: 999px;
+}
+
+.ff-token--rounded-square {
+  border-radius: 26%;
+}
+
+.ff-token--triangle {
+  width: 0;
+  height: 0;
+  border-left: 35px solid transparent;
+  border-right: 35px solid transparent;
+  border-bottom: 64px solid;
+  border-bottom-color: currentColor;
+  background: transparent !important;
+  box-shadow: none;
+}
+
+.ff-token--notch {
+  border-radius: 20px;
+  position: relative;
+}
+
+.ff-notch-cut {
+  position: absolute;
+  top: -2px;
+  width: 18px;
+  height: 16px;
+  border-radius: 0 0 10px 10px;
+  background: #07070a;
+  transform: translateX(-50%);
+}
+
+.ff-token--dots {
+  border-radius: 20px;
+  position: relative;
+}
+
+.ff-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4px;
+  border-radius: 50%;
+  background: #0f0f16;
+}
+
+.ff-pop {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: #93ff9f;
+  font-weight: 700;
+  animation: ff-pop-rise 0.5s ease-out forwards;
+}
+
+@keyframes ff-pop-rise {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -30%);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -140%);
+  }
+}
+
+.ff-round-label {
+  opacity: 0.8;
+  margin-bottom: -8px;
+}
+
+.ff-example-row {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+}
+
+.ff-example-row > div {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.ff-overlay--results {
+  align-content: start;
+  padding: 90px 16px 20px;
+  overflow-y: auto;
+}
+
+.ff-name-form {
+  margin: 8px auto;
+}
+
+.ff-name-form div {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.ff-name-form input,
+.ff-name-form button {
+  font-size: 1rem;
+  border-radius: 10px;
+  border: 1px solid #646485;
+  background: #111120;
+  color: #f5f5ff;
+  padding: 10px 12px;
+}
+
+.ff-name-form button {
+  cursor: pointer;
+}
+
+.ff-leaderboard {
+  margin: 10px auto;
+  width: min(460px, 94vw);
+}
+
+.ff-leaderboard ol {
+  list-style: decimal;
+  padding-left: 26px;
+  text-align: left;
+}
+
+.ff-leaderboard li {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.ff-error {
+  color: #ff9b9b;
+}
