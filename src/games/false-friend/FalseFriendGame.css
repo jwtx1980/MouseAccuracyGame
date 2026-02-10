@@ -1,0 +1,150 @@
+.false-friend {
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 20%, #1e2952, #090d1e 65%);
+  color: #f7f9ff;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+
+.false-friend__hud {
+  position: fixed;
+  z-index: 4;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  opacity: 0.92;
+}
+
+.false-friend__arena {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.orb {
+  position: absolute;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 -12px 20px rgb(0 0 0 / 25%), 0 8px 28px rgb(0 0 0 / 30%);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.orb__notch {
+  position: absolute;
+  width: 16%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: #090d1e;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 14%);
+}
+
+.orb__dots {
+  position: absolute;
+  display: flex;
+  gap: 0.2rem;
+  bottom: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.orb__dot {
+  width: 0.42rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 93%);
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  gap: 0.8rem;
+  padding: 2rem;
+  backdrop-filter: blur(2px);
+  background: rgb(4 8 20 / 56%);
+  z-index: 3;
+}
+
+.overlay--death {
+  background: rgb(5 7 18 / 75%);
+}
+
+.overlay h1,
+.overlay h2,
+.overlay p {
+  margin: 0;
+}
+
+.overlay__eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  opacity: 0.8;
+  font-size: 0.75rem;
+}
+
+.overlay__button {
+  margin-top: 0.8rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.95rem 2.6rem;
+  background: linear-gradient(130deg, #5ad8ff, #92ffca);
+  color: #081226;
+  font-weight: 800;
+  font-size: 1.15rem;
+  cursor: pointer;
+}
+
+.overlay__countdown {
+  font-size: clamp(4rem, 15vw, 8rem);
+}
+
+.overlay__example {
+  opacity: 0.84;
+  font-size: 0.95rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 0.8rem;
+  width: min(640px, 100%);
+}
+
+.stats-grid div {
+  background: rgb(255 255 255 / 10%);
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 0.7rem;
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.stats-grid span {
+  font-size: 0.82rem;
+  opacity: 0.8;
+}
+
+.stats-grid strong {
+  font-size: 1.25rem;
+}
+
+.leaderboard-placeholder {
+  margin-top: 0.4rem;
+  padding: 0.8rem 1rem;
+  border: 1px dashed rgb(255 255 255 / 35%);
+  border-radius: 0.6rem;
+  opacity: 0.9;
+}
