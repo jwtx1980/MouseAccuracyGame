@@ -492,6 +492,7 @@ function FalseFriendGame() {
   const runIdRef = useRef<string>('')
   const timersRef = useRef<number[]>([])
   const expiryTimersRef = useRef(new Map<string, number>())
+  const audioContextRef = useRef<AudioContext | null>(null)
 
   const supabase = useMemo(() => getSupabaseClient(), [])
 
@@ -559,11 +560,70 @@ function FalseFriendGame() {
     }
   }, [phase, supabase])
 
+  const getAudioContext = () => {
+    if (typeof window === 'undefined') return null
+    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextClass) return null
+    const audioContext = audioContextRef.current ?? (audioContextRef.current = new AudioContextClass())
+    if (audioContext.state === 'suspended') {
+      audioContext.resume().catch(() => undefined)
+    }
+    return audioContext
+  }
+
+  const playTone = (audioContext: AudioContext, { frequency, start, duration, gain, type }: { frequency: number; start: number; duration: number; gain: number; type: OscillatorType }) => {
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+
+    oscillator.type = type
+    oscillator.frequency.setValueAtTime(frequency, start)
+    gainNode.gain.setValueAtTime(0.0001, start)
+    gainNode.gain.exponentialRampToValueAtTime(gain, start + duration * 0.2)
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, start + duration)
+
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    oscillator.start(start)
+    oscillator.stop(start + duration)
+  }
+
+  const playFriendClickSound = () => {
+    const audioContext = getAudioContext()
+    if (!audioContext) return
+    const now = audioContext.currentTime
+    playTone(audioContext, { frequency: 660, start: now, duration: 0.12, gain: 0.1, type: 'triangle' })
+    playTone(audioContext, { frequency: 880, start: now + 0.11, duration: 0.17, gain: 0.12, type: 'sine' })
+  }
+
+  const playMissSound = () => {
+    const audioContext = getAudioContext()
+    if (!audioContext) return
+    const now = audioContext.currentTime
+    playTone(audioContext, { frequency: 220, start: now, duration: 0.13, gain: 0.14, type: 'square' })
+  }
+
+  const playLevelCompleteSound = () => {
+    const audioContext = getAudioContext()
+    if (!audioContext) return
+    const now = audioContext.currentTime
+    playTone(audioContext, { frequency: 523.25, start: now, duration: 0.09, gain: 0.1, type: 'sine' })
+    playTone(audioContext, { frequency: 659.25, start: now + 0.08, duration: 0.1, gain: 0.11, type: 'sine' })
+    playTone(audioContext, { frequency: 783.99, start: now + 0.17, duration: 0.16, gain: 0.12, type: 'triangle' })
+  }
+
   const triggerDeath = useCallback(() => {
     clearAllTimers()
     setActiveObjects([])
     setPhase('dead')
     deathScoreRef.current = score
+
+    const audioContext = getAudioContext()
+    if (!audioContext) return
+
+    const now = audioContext.currentTime
+    playTone(audioContext, { frequency: 240, start: now, duration: 0.1, gain: 0.15, type: 'sawtooth' })
+    playTone(audioContext, { frequency: 170, start: now + 0.09, duration: 0.11, gain: 0.15, type: 'sawtooth' })
+    playTone(audioContext, { frequency: 130, start: now + 0.18, duration: 0.12, gain: 0.16, type: 'sawtooth' })
   }, [clearAllTimers, score])
 
   const showRuleThenStart = useCallback(
@@ -608,6 +668,7 @@ function FalseFriendGame() {
               return
             }
 
+            playLevelCompleteSound()
             setScore((prev) => prev + Math.floor(ROUND_BONUS_BASE * nextRound ** 1.2))
             setRoundsCleared(nextRound)
             showRuleThenStart(nextRound + 1)
@@ -635,6 +696,7 @@ function FalseFriendGame() {
     setActiveObjects((current) => current.filter((item) => item.id !== orb.id))
 
     if (!orb.isFriend) {
+      playMissSound()
       triggerDeath()
       return
     }
@@ -644,6 +706,7 @@ function FalseFriendGame() {
     setScore((prev) => prev + clickPoints)
     setFriendsClicked((prev) => prev + 1)
     setReactionTotal((prev) => prev + reactionMs)
+    playFriendClickSound()
 
     roundFriendHitsRef.current += 1
     setRoundFriendHits(roundFriendHitsRef.current)
