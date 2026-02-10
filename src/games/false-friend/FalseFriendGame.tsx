@@ -28,6 +28,7 @@ type Rule = {
 const OBJECTS_PER_ROUND = 20
 const FRIENDS_PER_ROUND = 4
 const ON_SCREEN_MS = 2000
+const RULE_CARD_MS = 3000
 const FALSE_EXPIRE_POINTS = 10
 
 const RULES: Rule[] = [
@@ -74,6 +75,31 @@ function getSpawnGap(roundNumber: number) {
 
 function getNearMissWeight(roundNumber: number) {
   return clamp(0.35 + (roundNumber - 1) * 0.08, 0.35, 0.92)
+}
+
+function makeFalsePreview(rule: Rule, roundNumber: number) {
+  const mode = roundNumber % 3
+  if (mode === 0) {
+    return {
+      dotCount: rule.friendDotCount,
+      notchStep: (rule.friendNotchStep + 1) % 8,
+      hue: rule.friendHue,
+    }
+  }
+
+  if (mode === 1) {
+    return {
+      dotCount: clamp(rule.friendDotCount + 1, 0, 4),
+      notchStep: rule.friendNotchStep,
+      hue: rule.friendHue,
+    }
+  }
+
+  return {
+    dotCount: rule.friendDotCount,
+    notchStep: rule.friendNotchStep,
+    hue: rule.friendHue + 12,
+  }
 }
 
 function makeOrb(roundNumber: number, rule: Rule, isFriend: boolean, index: number): Orb {
@@ -140,6 +166,31 @@ function buildRound(roundNumber: number) {
   return { rule, objects }
 }
 
+function OrbitGlyph({ dotCount, notchStep, hue }: { dotCount: number; notchStep: number; hue: number }) {
+  const notchAngle = notchStep * 45
+  const notchRadians = (notchAngle * Math.PI) / 180
+  const radius = 34
+  const notchDistance = radius - 4
+
+  return (
+    <span className="orb orb--preview" style={{ background: `hsl(${hue} 86% 58%)` }}>
+      <span
+        className="orb__notch"
+        style={{
+          left: `calc(50% + ${Math.cos(notchRadians) * notchDistance}px)`,
+          top: `calc(50% + ${Math.sin(notchRadians) * notchDistance}px)`,
+          transform: 'translate(-50%, -50%)',
+        }}
+      />
+      <span className="orb__dots">
+        {Array.from({ length: dotCount }).map((_, dotIndex) => (
+          <span key={`preview-dot-${dotIndex}`} className="orb__dot" />
+        ))}
+      </span>
+    </span>
+  )
+}
+
 function FalseFriendGame() {
   const [phase, setPhase] = useState<Phase>('start')
   const [countdown, setCountdown] = useState(3)
@@ -166,50 +217,53 @@ function FalseFriendGame() {
     return () => clearAllTimers()
   }, [clearAllTimers])
 
-  const startRound = useCallback(
+  const showRuleThenStart = useCallback(
     (nextRound: number) => {
       setRoundNumber(nextRound)
-      setActiveObjects([])
-      const { rule, objects } = buildRound(nextRound)
-      setCurrentRule(rule)
-      setPhase('playing')
+      setCurrentRule(getRule(nextRound))
+      setPhase('ruleCard')
 
-      const spawnGap = getSpawnGap(nextRound)
+      const startTimer = window.setTimeout(() => {
+        setActiveObjects([])
+        const { rule, objects } = buildRound(nextRound)
+        setCurrentRule(rule)
+        setPhase('playing')
 
-      objects.forEach((object, index) => {
-        const timer = window.setTimeout(() => {
-          const spawnedAt = performance.now()
-          const spawnedObject = { ...object, spawnedAt }
-          setActiveObjects((current) => [...current, spawnedObject])
+        const spawnGap = getSpawnGap(nextRound)
 
-          const expiryTimer = window.setTimeout(() => {
-            setActiveObjects((current) => current.filter((item) => item.id !== spawnedObject.id))
-            if (!spawnedObject.isFriend) {
-              setScore((prev) => prev + FALSE_EXPIRE_POINTS)
-            }
-            expiryTimersRef.current.delete(spawnedObject.id)
-          }, ON_SCREEN_MS)
+        objects.forEach((object, index) => {
+          const timer = window.setTimeout(() => {
+            const spawnedAt = performance.now()
+            const spawnedObject = { ...object, spawnedAt }
+            setActiveObjects((current) => [...current, spawnedObject])
 
-          expiryTimersRef.current.set(spawnedObject.id, expiryTimer)
-        }, index * spawnGap)
+            const expiryTimer = window.setTimeout(() => {
+              setActiveObjects((current) => current.filter((item) => item.id !== spawnedObject.id))
+              if (!spawnedObject.isFriend) {
+                setScore((prev) => prev + FALSE_EXPIRE_POINTS)
+              }
+              expiryTimersRef.current.delete(spawnedObject.id)
+            }, ON_SCREEN_MS)
 
-        timersRef.current.push(timer)
-      })
+            expiryTimersRef.current.set(spawnedObject.id, expiryTimer)
+          }, index * spawnGap)
 
-      const endTimer = window.setTimeout(
-        () => {
-          setScore((prev) => prev + Math.floor(500 * nextRound ** 1.2))
-          setRoundsCleared(nextRound)
-          setPhase('ruleCard')
-          const ruleCardTimer = window.setTimeout(() => {
-            startRound(nextRound + 1)
-          }, 2000)
-          timersRef.current.push(ruleCardTimer)
-        },
-        (OBJECTS_PER_ROUND - 1) * spawnGap + ON_SCREEN_MS + 30,
-      )
+          timersRef.current.push(timer)
+        })
 
-      timersRef.current.push(endTimer)
+        const endTimer = window.setTimeout(
+          () => {
+            setScore((prev) => prev + Math.floor(500 * nextRound ** 1.2))
+            setRoundsCleared(nextRound)
+            showRuleThenStart(nextRound + 1)
+          },
+          (OBJECTS_PER_ROUND - 1) * spawnGap + ON_SCREEN_MS + 30,
+        )
+
+        timersRef.current.push(endTimer)
+      }, RULE_CARD_MS)
+
+      timersRef.current.push(startTimer)
     },
     [],
   )
@@ -265,16 +319,11 @@ function FalseFriendGame() {
       timersRef.current.push(timer)
     }
 
-    const toRuleCard = window.setTimeout(() => {
-      setPhase('ruleCard')
-      setCurrentRule(getRule(1))
-      const startTimer = window.setTimeout(() => {
-        startRound(1)
-      }, 2000)
-      timersRef.current.push(startTimer)
+    const startTimer = window.setTimeout(() => {
+      showRuleThenStart(1)
     }, 3000)
 
-    timersRef.current.push(toRuleCard)
+    timersRef.current.push(startTimer)
   }
 
   const averageReaction = useMemo(() => {
@@ -283,6 +332,8 @@ function FalseFriendGame() {
     }
     return Math.round(reactionTotal / friendsClicked)
   }, [friendsClicked, reactionTotal])
+
+  const previewFalse = makeFalsePreview(currentRule, roundNumber)
 
   return (
     <div className="false-friend">
@@ -324,7 +375,6 @@ function FalseFriendGame() {
                   transform: 'translate(-50%, -50%)',
                 }}
               />
-
               <span className="orb__dots">
                 {Array.from({ length: orb.dotCount }).map((_, dotIndex) => (
                   <span key={`${orb.id}-dot-${dotIndex}`} className="orb__dot" />
@@ -358,6 +408,20 @@ function FalseFriendGame() {
             <h2>{currentRule.title}</h2>
             <p>{currentRule.sentence}</p>
             <p className="overlay__example">{currentRule.example}</p>
+            <div className="rule-preview">
+              <div>
+                <span>Friend</span>
+                <OrbitGlyph
+                  dotCount={currentRule.friendDotCount}
+                  notchStep={currentRule.friendNotchStep}
+                  hue={currentRule.friendHue}
+                />
+              </div>
+              <div>
+                <span>False Friend</span>
+                <OrbitGlyph dotCount={previewFalse.dotCount} notchStep={previewFalse.notchStep} hue={previewFalse.hue} />
+              </div>
+            </div>
           </section>
         )}
 
