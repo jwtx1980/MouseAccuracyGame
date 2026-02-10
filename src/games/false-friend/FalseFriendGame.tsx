@@ -27,6 +27,14 @@ type ScoreEntry = {
   date: string
 }
 
+type RunSummary = {
+  runId: string
+  score: number
+  roundsCleared: number
+  friendsClicked: number
+  averageReaction: number
+}
+
 type LevelConfig = {
   tier: 1 | 2
   attributes: Attribute[]
@@ -490,8 +498,8 @@ function FalseFriendGame() {
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(false)
   const [pendingName, setPendingName] = useState('')
   const [hasSubmittedScore, setHasSubmittedScore] = useState(false)
+  const [deadRunSummary, setDeadRunSummary] = useState<RunSummary | null>(null)
 
-  const deathScoreRef = useRef(0)
   const roundFriendHitsRef = useRef(0)
   const runIdRef = useRef<string>('')
   const timersRef = useRef<number[]>([])
@@ -618,8 +626,17 @@ function FalseFriendGame() {
   const triggerDeath = useCallback(() => {
     clearAllTimers()
     setActiveObjects([])
+
+    const finishedRunSummary: RunSummary = {
+      runId: runIdRef.current,
+      score,
+      roundsCleared,
+      friendsClicked,
+      averageReaction: friendsClicked === 0 ? 0 : Math.round(reactionTotal / friendsClicked),
+    }
+
+    setDeadRunSummary(finishedRunSummary)
     setPhase('dead')
-    deathScoreRef.current = score
 
     const audioContext = getAudioContext()
     if (!audioContext) return
@@ -628,7 +645,7 @@ function FalseFriendGame() {
     playTone(audioContext, { frequency: 240, start: now, duration: 0.1, gain: 0.15, type: 'sawtooth' })
     playTone(audioContext, { frequency: 170, start: now + 0.09, duration: 0.11, gain: 0.15, type: 'sawtooth' })
     playTone(audioContext, { frequency: 130, start: now + 0.18, duration: 0.12, gain: 0.16, type: 'sawtooth' })
-  }, [clearAllTimers, score])
+  }, [clearAllTimers, friendsClicked, reactionTotal, roundsCleared, score])
 
   const showRuleThenStart = useCallback(
     (nextRound: number) => {
@@ -734,7 +751,7 @@ function FalseFriendGame() {
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(16).slice(2)}`
-    deathScoreRef.current = 0
+    setDeadRunSummary(null)
     setCountdown(3)
     setPhase('countdown')
 
@@ -749,30 +766,25 @@ function FalseFriendGame() {
     timersRef.current.push(startTimer)
   }
 
-  const averageReaction = useMemo(() => {
-    if (friendsClicked === 0) return 0
-    return Math.round(reactionTotal / friendsClicked)
-  }, [friendsClicked, reactionTotal])
-
   const qualifiesForLeaderboard = useMemo(() => {
-    if (phase !== 'dead' || hasSubmittedScore || !supabase) return false
+    if (phase !== 'dead' || hasSubmittedScore || !supabase || !deadRunSummary) return false
     if (leaderboard.length < 10) return true
-    return leaderboard.some((entry) => deathScoreRef.current > entry.totalScore)
-  }, [phase, hasSubmittedScore, leaderboard, supabase])
+    return leaderboard.some((entry) => deadRunSummary.score > entry.totalScore)
+  }, [phase, hasSubmittedScore, leaderboard, supabase, deadRunSummary])
 
   const handleSubmitScore = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
-    if (!supabase || hasSubmittedScore || !pendingName.trim()) {
+    if (!supabase || hasSubmittedScore || !pendingName.trim() || !deadRunSummary) {
       return
     }
 
     const payload = {
-      run_id: runIdRef.current,
+      run_id: deadRunSummary.runId,
       user_id: getStableUserId(),
       name: pendingName.trim().slice(0, 24),
-      total_score: deathScoreRef.current,
-      rounds_cleared: roundsCleared,
+      total_score: deadRunSummary.score,
+      rounds_cleared: deadRunSummary.roundsCleared,
     }
 
     const { error } = await supabase.from('false_friend_scores').insert(payload)
@@ -883,19 +895,19 @@ function FalseFriendGame() {
         {phase === 'dead' && (
           <section className="overlay overlay--death">
             <p className="overlay__eyebrow">Run Over</p>
-            <h2>{deathScoreRef.current.toLocaleString()} pts</h2>
+            <h2>{(deadRunSummary?.score ?? 0).toLocaleString()} pts</h2>
             <div className="stats-grid">
               <div>
                 <span>Rounds cleared</span>
-                <strong>{roundsCleared}</strong>
+                <strong>{deadRunSummary?.roundsCleared ?? 0}</strong>
               </div>
               <div>
                 <span>Friends clicked</span>
-                <strong>{friendsClicked}</strong>
+                <strong>{deadRunSummary?.friendsClicked ?? 0}</strong>
               </div>
               <div>
                 <span>Avg reaction</span>
-                <strong>{averageReaction} ms</strong>
+                <strong>{deadRunSummary?.averageReaction ?? 0} ms</strong>
               </div>
             </div>
 
