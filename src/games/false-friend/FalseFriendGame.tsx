@@ -1,4 +1,6 @@
+import type { FormEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getSupabaseClient } from '../../lib/supabase'
 import './FalseFriendGame.css'
 
 type Phase = 'start' | 'countdown' | 'ruleCard' | 'playing' | 'dead'
@@ -16,6 +18,13 @@ type Orb = {
   x: number
   y: number
   spawnedAt: number
+}
+
+type ScoreEntry = {
+  name: string
+  totalScore: number
+  roundsCleared: number
+  date: string
 }
 
 type LevelConfig = {
@@ -51,9 +60,25 @@ const FALSE_EXPIRE_POINTS = 10
 const ROUND_BONUS_BASE = 500
 const SHAPES: ShapeType[] = ['circle', 'square', 'diamond', 'triangle', 'pentagon', 'hexagon']
 const FULL_PALETTE = Array.from({ length: 24 }, (_, i) => Math.round((360 / 24) * i))
+const FALSE_FRIEND_USER_ID_KEY = 'false-friend-user-id-v1'
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
+}
+
+function getStableUserId() {
+  if (typeof window === 'undefined') return 'server'
+
+  const existing = window.localStorage.getItem(FALSE_FRIEND_USER_ID_KEY)
+  if (existing) return existing
+
+  const newId =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+  window.localStorage.setItem(FALSE_FRIEND_USER_ID_KEY, newId)
+  return newId
 }
 
 function getNotchAngle(index: number, notchPositions: number) {
@@ -456,10 +481,19 @@ function FalseFriendGame() {
   const [roundsCleared, setRoundsCleared] = useState(0)
   const [roundFriendHits, setRoundFriendHits] = useState(0)
 
+  const [leaderboard, setLeaderboard] = useState<ScoreEntry[]>([])
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null)
+  const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(false)
+  const [pendingName, setPendingName] = useState('')
+  const [hasSubmittedScore, setHasSubmittedScore] = useState(false)
+
   const deathScoreRef = useRef(0)
   const roundFriendHitsRef = useRef(0)
+  const runIdRef = useRef<string>('')
   const timersRef = useRef<number[]>([])
   const expiryTimersRef = useRef(new Map<string, number>())
+
+  const supabase = useMemo(() => getSupabaseClient(), [])
 
   const clearAllTimers = useCallback(() => {
     timersRef.current.forEach((timerId) => window.clearTimeout(timerId))
@@ -469,6 +503,61 @@ function FalseFriendGame() {
   }, [])
 
   useEffect(() => () => clearAllTimers(), [clearAllTimers])
+
+  useEffect(() => {
+    if (phase !== 'dead') {
+      return
+    }
+
+    if (!supabase) {
+      setLeaderboardError('Leaderboard unavailable: missing Supabase configuration.')
+      return
+    }
+
+    let active = true
+    setIsLeaderboardLoading(true)
+    setLeaderboardError(null)
+
+    const load = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('false_friend_scores')
+          .select('name, total_score, rounds_cleared, created_at')
+          .order('total_score', { ascending: false })
+          .order('created_at', { ascending: true })
+          .limit(10)
+
+        if (!active) return
+
+        if (error) {
+          setLeaderboardError('Unable to load leaderboard right now.')
+          return
+        }
+
+        const entries: ScoreEntry[] =
+          data?.map((entry) => ({
+            name: entry.name,
+            totalScore: entry.total_score,
+            roundsCleared: entry.rounds_cleared,
+            date: entry.created_at,
+          })) ?? []
+
+        setLeaderboard(entries)
+      } catch {
+        if (!active) return
+        setLeaderboardError('Unable to load leaderboard right now.')
+      } finally {
+        if (!active) return
+        setIsLeaderboardLoading(false)
+      }
+    }
+
+    void load()
+
+    return () => {
+      active = false
+    }
+  }, [phase, supabase])
 
   const triggerDeath = useCallback(() => {
     clearAllTimers()
@@ -570,6 +659,14 @@ function FalseFriendGame() {
     setCurrentRule(buildRule(1))
     roundFriendHitsRef.current = 0
     setRoundFriendHits(0)
+    setLeaderboard([])
+    setLeaderboardError(null)
+    setPendingName('')
+    setHasSubmittedScore(false)
+    runIdRef.current =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`
     deathScoreRef.current = 0
     setCountdown(3)
     setPhase('countdown')
@@ -589,6 +686,51 @@ function FalseFriendGame() {
     if (friendsClicked === 0) return 0
     return Math.round(reactionTotal / friendsClicked)
   }, [friendsClicked, reactionTotal])
+
+  const qualifiesForLeaderboard = useMemo(() => {
+    if (phase !== 'dead' || hasSubmittedScore || !supabase) return false
+    if (leaderboard.length < 10) return true
+    return leaderboard.some((entry) => deathScoreRef.current > entry.totalScore)
+  }, [phase, hasSubmittedScore, leaderboard, supabase])
+
+  const handleSubmitScore = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!supabase || hasSubmittedScore || !pendingName.trim()) {
+      return
+    }
+
+    const payload = {
+      run_id: runIdRef.current,
+      user_id: getStableUserId(),
+      name: pendingName.trim().slice(0, 24),
+      total_score: deathScoreRef.current,
+      rounds_cleared: roundsCleared,
+    }
+
+    const { error } = await supabase.from('false_friend_scores').insert(payload)
+
+    if (error) {
+      setLeaderboardError('Unable to submit score right now.')
+      return
+    }
+
+    setHasSubmittedScore(true)
+    setPendingName('')
+    setLeaderboard((current) =>
+      [
+        ...current,
+        {
+          name: payload.name,
+          totalScore: payload.total_score,
+          roundsCleared: payload.rounds_cleared,
+          date: new Date().toISOString(),
+        },
+      ]
+        .sort((a, b) => b.totalScore - a.totalScore || a.date.localeCompare(b.date))
+        .slice(0, 10),
+    )
+  }
 
   return (
     <div className="false-friend">
@@ -700,7 +842,43 @@ function FalseFriendGame() {
                 <strong>{averageReaction} ms</strong>
               </div>
             </div>
-            <aside className="leaderboard-placeholder">Global leaderboard comes next</aside>
+
+            {qualifiesForLeaderboard && (
+              <form className="false-friend-submit" onSubmit={(event) => void handleSubmitScore(event)}>
+                <label htmlFor="false-friend-name">You qualified for top 10. Enter your name:</label>
+                <div className="false-friend-submit__row">
+                  <input
+                    id="false-friend-name"
+                    type="text"
+                    maxLength={24}
+                    value={pendingName}
+                    onChange={(event) => setPendingName(event.target.value)}
+                    placeholder="Player name"
+                    required
+                  />
+                  <button type="submit">Submit</button>
+                </div>
+              </form>
+            )}
+
+            <div className="false-friend-board">
+              <p className="false-friend-board__title">Global leaderboard</p>
+              {isLeaderboardLoading && <p>Loading leaderboard...</p>}
+              {leaderboardError && <p>{leaderboardError}</p>}
+              {!isLeaderboardLoading && !leaderboardError && (
+                <ol>
+                  {leaderboard.length === 0 && <li>No scores yet. Be the first.</li>}
+                  {leaderboard.map((entry, index) => (
+                    <li key={`${entry.name}-${entry.date}-${index}`}>
+                      <span>#{index + 1}</span>
+                      <span>{entry.name}</span>
+                      <span>{entry.totalScore.toLocaleString()} pts</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+
             <button type="button" className="overlay__button" onClick={beginRun}>
               Play Again
             </button>
